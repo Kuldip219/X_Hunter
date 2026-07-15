@@ -4,12 +4,17 @@
 
 This project was created to strengthen my skills in Python game development, object-oriented programming, game architecture, and asset management.
 
+---
 
+## 📥 Download
 
-## 🛠 Built With
+The latest playable version is available in the **Releases** section.
 
-- Python.
-- Pygame.
+1. Download the latest **X_Hunter.zip**
+2. Extract the ZIP file
+3. Run **X_Hunter.exe**
+
+Note : There are two Source code files that you don't need to download and no Python installation is required.
 
 ---
 
@@ -30,17 +35,10 @@ This project was created to strengthen my skills in Python game development, obj
 
 ---
 
-## 📥 Download
+## 🛠 Built With
 
-The latest playable version is available in the **Releases** section.
-
-1. Download the latest **X_Hunter.zip**
-2. Extract the ZIP file
-3. Run **X_Hunter.exe**
-
-Note : There are two Source code files that you don't need to download and no Python installation is required.
-
----
+- Python.
+- Pygame.
 
 ## 👨‍💻 Author
 
