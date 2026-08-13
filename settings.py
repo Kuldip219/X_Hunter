@@ -26,6 +26,10 @@ PLAYER_SPEED: int = 5
 PLAYER_START_HEALTH: int = 5
 PLAYER_IMG_SIZE: tuple[int, int] = (65, 80)
 
+# Fire cooldown: frames between shots while Space is held (12 = 5 shots/s
+# at 60 FPS - classic arcade cadence, not a machine gun).
+PLAYER_FIRE_COOLDOWN: int = 12
+
 # --- Invulnerability (i-frames) --- #
 # After taking a hit the player is immune for this many frames (~1 s at 60 FPS)
 # and blinks every PLAYER_BLINK_INTERVAL frames to show they are safe.

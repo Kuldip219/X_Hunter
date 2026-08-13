@@ -183,10 +183,6 @@ class Game:
         if key == pygame.K_ESCAPE and self.state == "options":
             self.fade.start("menu")
 
-        if key == pygame.K_SPACE and self.state == "game" and not self.player.dead:
-            self.bullets.append(self.player.spawn_bullet())
-            self.audio.play("shoot")
-
     # ------------------------------------------------------------------ #
     # "game" state: update
     # ------------------------------------------------------------------ #
@@ -201,8 +197,17 @@ class Game:
             return
 
         self.player.update_invulnerability()
+        self.player.update_fire_cooldown()
         self.player.handle_input(keys)
         self.player.clamp_to_screen(settings.WIDTH)
+
+        # Hold-to-fire: while Space is held, fire once per cooldown window.
+        # The dead-early-return above freezes all of gameplay, so this can
+        # never fire during the death sequence (H1 gating preserved).
+        if keys[pygame.K_SPACE] and self.player.can_fire and not self.player.dead:
+            self.bullets.append(self.player.spawn_bullet())
+            self.audio.play("shoot")
+            self.player.fire_cooldown = settings.PLAYER_FIRE_COOLDOWN
 
         for bullet in self.bullets[:]:
             bullet.update()

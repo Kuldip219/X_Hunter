@@ -57,8 +57,10 @@ def test_muted_playback_does_not_crash(game):
 
 def test_shooting_fires_sound_and_bullet(game):
     start_game(game)
+    game.enemies = []
+    game.player.y = 600
     n_bullets = len(game.bullets)
-    game._handle_keydown(pygame.K_SPACE)
+    game._update_game(KeyState(pygame.K_SPACE))  # hold Space -> shoot sound path
     assert len(game.bullets) == n_bullets + 1  # sound path ran without crashing
 
 

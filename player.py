@@ -27,6 +27,7 @@ class Player:
         self.dead = False
         self.explosion: Optional[Explosion] = None
         self.invulnerable_timer = 0
+        self.fire_cooldown = 0
 
     def handle_input(self, keys: Sequence[bool]) -> None:
         """Move left/right based on currently-held keys. No-op while dead."""
@@ -50,6 +51,16 @@ class Player:
         """Decrement the i-frame timer once per frame (no-op while safe)."""
         if self.invulnerable_timer > 0:
             self.invulnerable_timer -= 1
+
+    def update_fire_cooldown(self) -> None:
+        """Decrement the hold-to-fire cooldown once per frame."""
+        if self.fire_cooldown > 0:
+            self.fire_cooldown -= 1
+
+    @property
+    def can_fire(self) -> bool:
+        """True when the fire cooldown has elapsed and a shot may be fired."""
+        return self.fire_cooldown <= 0
 
     @property
     def invulnerable(self) -> bool:

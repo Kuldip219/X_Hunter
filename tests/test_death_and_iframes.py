@@ -65,10 +65,12 @@ def test_gameplay_frozen_during_death_fade_until_game_over(game):
     bullets0 = len(game.bullets)
     explosions0 = len(game.explosions)
 
-    # Hold LEFT, mash SPACE and ESC for a few frames.
+    # Hold LEFT + SPACE and mash ESC for a few frames: all must be ignored
+    # while dead. The direct _update_game call exercises the hold-to-fire path
+    # (Space held) against the frozen gameplay.
     for _ in range(5):
+        game._update_game(KeyState(pygame.K_LEFT, pygame.K_SPACE))
         game._update_and_draw((0, 0))
-        game._handle_keydown(pygame.K_SPACE)
         game._handle_keydown(pygame.K_ESCAPE)
         new_state = game.fade.update()
         if new_state is not None:
