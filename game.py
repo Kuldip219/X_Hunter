@@ -9,6 +9,7 @@ import ui
 from assets import Assets
 from audio import AudioManager
 from bullet import Bullet
+from difficulty import Difficulty
 from enemy import Enemy
 from explosion import Explosion
 from menus import GameOverMenu, MainMenu, OptionsScreen, PauseMenu
@@ -37,6 +38,7 @@ class Game:
         self.damage_flash = ui.DamageFlash()
         self.fade = ui.FadeTransition((settings.WIDTH, settings.HEIGHT))
         self.shake_offset: tuple[int, int] = (0, 0)
+        self.difficulty = Difficulty()
 
         self.running = True
         self.state = "menu"
@@ -60,6 +62,9 @@ class Game:
         self.screen_shake.timer = 0
         self.damage_flash.timer = 0
         self.explosions = []
+        # Difficulty clock: elapsed survival time is measured from here, so a
+        # restart always starts the ramp back at baseline (no carryover).
+        self.run_start_ticks = pygame.time.get_ticks()
 
     # ------------------------------------------------------------------ #
     # Main loop
@@ -208,6 +213,27 @@ class Game:
             self.bullets.append(self.player.spawn_bullet())
             self.audio.play("shoot")
             self.player.fire_cooldown = settings.PLAYER_FIRE_COOLDOWN
+
+        # Difficulty ramp (invisible, smooth): scale enemy speed and the
+        # active enemy count off a single blended difficulty value. It runs
+        # only while the player is alive - the dead-early-return above keeps
+        # it fully frozen during the death sequence (H1 gating preserved).
+        elapsed = (pygame.time.get_ticks() - self.run_start_ticks) / 1000.0
+        diff = self.difficulty.value(self.score, elapsed)
+
+        enemy_speed = min(
+            settings.ENEMY_SPEED + settings.ENEMY_SPEED_GAIN * diff,
+            settings.ENEMY_MAX_SPEED,
+        )
+        for enemy in self.enemies:
+            enemy.speed = enemy_speed
+
+        target_count = min(
+            settings.INITIAL_ENEMY_COUNT + int(settings.ENEMY_COUNT_GAIN * diff),
+            settings.ENEMY_MAX_COUNT,
+        )
+        while len(self.enemies) < target_count:
+            self.enemies.append(Enemy.spawn_initial(settings.WIDTH))
 
         for bullet in self.bullets[:]:
             bullet.update()
