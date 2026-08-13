@@ -17,8 +17,11 @@ FONT_SIZE_SMALL: int = 36
 FONT_SIZE_LARGE: int = 72
 
 # --- Player --- #
-PLAYER_WIDTH: int = 50
-PLAYER_HEIGHT: int = 50
+# Collision rect dimensions. These must match PLAYER_IMG_SIZE so the hitbox
+# coincides exactly with the rendered sprite (both drawn from the top-left
+# corner (x, y)).
+PLAYER_WIDTH: int = 65
+PLAYER_HEIGHT: int = 80
 PLAYER_SPEED: int = 5
 PLAYER_START_HEALTH: int = 5
 PLAYER_IMG_SIZE: tuple[int, int] = (65, 80)
@@ -35,15 +38,17 @@ BULLET_IMG_SIZE: tuple[int, int] = (10, 20)
 BULLET_OFFSCREEN_Y: int = -20
 
 # --- Enemy --- #
-ENEMY_WIDTH: int = 40
-ENEMY_HEIGHT: int = 40
+# Collision rect dimensions. These must match ENEMY_IMG_SIZE so the hitbox
+# coincides exactly with the rendered sprite (both drawn from the top-left
+# corner (x, y)).
+ENEMY_WIDTH: int = 50
+ENEMY_HEIGHT: int = 50
 ENEMY_SPEED: int = 5
 ENEMY_IMG_SIZE: tuple[int, int] = (50, 50)
 
-# NOTE: preserved from the original code exactly as found. The initial wave
-# spawned by reset_game() used a margin of 50 (player width) instead of the
-# enemy width (40) used everywhere else. This is a pre-existing quirk, kept
-# intentionally rather than "fixed", per refactor requirements.
+# NOTE: the initial wave spawned by reset_game() uses a fixed X margin of 50.
+# Since the enemy hitbox was resized to match the sprite (ENEMY_WIDTH 40 -> 50),
+# respawn() now uses the same 50px margin, so the two spawn paths line up.
 INITIAL_ENEMY_COUNT: int = 5
 INITIAL_ENEMY_X_MARGIN: int = 50
 INITIAL_ENEMY_MIN_Y: int = -600

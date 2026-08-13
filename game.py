@@ -192,7 +192,7 @@ class Game:
 
         for bullet in self.bullets[:]:
             for enemy in self.enemies:
-                if enemy.contains_point(bullet.x, bullet.y):
+                if enemy.get_rect().colliderect(bullet.get_rect()):
                     self.explosions.append(
                         Explosion(enemy.x, enemy.y, settings.ENEMY_EXPLOSION_FRAME_DELAY)
                     )
