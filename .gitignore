@@ -1,25 +1,17 @@
-*.db
-*.db-shm
-.freebuff/desktop-v2.db-wal
-.freebuff/preview-23d979c9-14f6-4172-9bd0-e963d6378db0.log
-.freebuff/preview-23d979c9-14f6-4172-9bd0-e963d6378db0.log.err
-.freebuff/preview/frame.html
-.freebuff/preview/frame.png
-.freebuff/preview/frame_tmp.png
-.freebuff/preview_capture.log
-.freebuff/preview_capture.log.err
-.freebuff/preview_live.py
-*.log
-*.md
-.freebuff/smoke_test_death.py
+# Python bytecode
+__pycache__/
 *.pyc
-*.pyc
-__pycache__/game.cpython-312.pyc
-__pycache__/player.cpython-312.pyc
-__pycache__/player.cpython-312.pyc
-__pycache__/settings.cpython-312.pyc
-*.pyc
-*.pyc
-__pycache__/enemy.cpython-312.pyc
-__pycache__/game.cpython-312.pyc
-*.txt
+
+# PyInstaller build output
+build/
+dist/
+
+# Preview / scratch infrastructure (not part of the game source)
+.freebuff/
+
+# Virtual environments
+venv/
+.venv/
+
+# Pytest cache
+.pytest_cache/
