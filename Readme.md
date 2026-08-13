@@ -18,6 +18,24 @@ Note : There are two Source code files that you don't need to download and no Py
 
 ---
 
+## ⚙️ Setup (run from source)
+
+Install the runtime dependencies, then run the game:
+
+```
+pip install -r requirements.txt
+python main.py
+```
+
+To run the test suite, also install the dev dependencies (adds pytest):
+
+```
+pip install -r requirements-dev.txt
+pytest
+```
+
+---
+
 ## 📷 Screenshots
 
 ![Main_Menu](Screenshots/main_menu.png) ![Gameplay](Screenshots/gameplay.png) ![Pause_Menu](Screenshots/pause_menu.png)
