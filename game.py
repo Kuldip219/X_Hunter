@@ -7,6 +7,7 @@ import pygame
 import settings
 import ui
 from assets import Assets
+from audio import AudioManager
 from bullet import Bullet
 from enemy import Enemy
 from explosion import Explosion
@@ -25,9 +26,11 @@ class Game:
 
         self.assets = Assets.load()
 
-        self.main_menu = MainMenu(self.assets, settings.WIDTH)
-        self.pause_menu = PauseMenu(self.assets, settings.WIDTH)
-        self.game_over_menu = GameOverMenu(self.assets, settings.WIDTH)
+        self.audio = AudioManager()
+
+        self.main_menu = MainMenu(self.assets, settings.WIDTH, audio=self.audio)
+        self.pause_menu = PauseMenu(self.assets, settings.WIDTH, audio=self.audio)
+        self.game_over_menu = GameOverMenu(self.assets, settings.WIDTH, audio=self.audio)
         self.options_screen = OptionsScreen(self.assets, settings.WIDTH, settings.HEIGHT)
 
         self.screen_shake = ui.ScreenShake()
@@ -72,7 +75,7 @@ class Game:
 
             new_state = self.fade.update()
             if new_state is not None:
-                self.state = new_state
+                self._change_state(new_state)
             self.fade.draw(self.screen)
 
             pygame.display.update()
@@ -98,6 +101,26 @@ class Game:
         elif self.state == "game_over":
             self.game_over_menu.draw(self.screen, mouse_pos)
 
+        # Global (non-intrusive) indication that all audio is muted.
+        if self.audio.muted:
+            self._draw_mute_indicator()
+
+    def _change_state(self, new_state: str) -> None:
+        """Apply a completed state transition and keep the music in sync."""
+        self.state = new_state
+        if new_state == "game":
+            self.audio.play_music()
+        elif new_state == "pause":
+            self.audio.pause_music()
+        elif new_state in ("menu", "game_over"):
+            self.audio.stop_music()
+
+    def _draw_mute_indicator(self) -> None:
+        """Small 'MUTED' label in the top-right corner while audio is off."""
+        text = self.assets.font.render("MUTED", True, settings.LIGHT_GRAY)
+        rect = text.get_rect(topright=(settings.WIDTH - 10, 10))
+        self.screen.blit(text, rect)
+
     # ------------------------------------------------------------------ #
     # Events
     # ------------------------------------------------------------------ #
@@ -116,6 +139,8 @@ class Game:
     def _handle_mouse_click(self, mouse_pos: tuple[int, int]) -> None:
         if self.state == "menu":
             action = self.main_menu.handle_click(mouse_pos)
+            if action:
+                self.audio.play("menu_click")
             if action == "play":
                 self.reset_game()
                 self.fade.start("game")
@@ -126,6 +151,8 @@ class Game:
 
         elif self.state == "pause":
             action = self.pause_menu.handle_click(mouse_pos)
+            if action:
+                self.audio.play("menu_click")
             if action == "continue":
                 self.fade.start("game")
             elif action == "quit_to_menu":
@@ -133,6 +160,8 @@ class Game:
 
         elif self.state == "game_over":
             action = self.game_over_menu.handle_click(mouse_pos)
+            if action:
+                self.audio.play("menu_click")
             if action == "restart":
                 self.reset_game()
                 self.fade.start("game")
@@ -140,6 +169,10 @@ class Game:
                 self.fade.start("menu")
 
     def _handle_keydown(self, key: int) -> None:
+        # Global mute toggle, available in every state.
+        if key == pygame.K_m:
+            self.audio.toggle_mute()
+
         # While the player is dead, gameplay is frozen: ESC cannot pause and
         # Space cannot fire until the game-over transition completes.
         if key == pygame.K_ESCAPE and self.state == "game" and not self.player.dead:
@@ -152,6 +185,7 @@ class Game:
 
         if key == pygame.K_SPACE and self.state == "game" and not self.player.dead:
             self.bullets.append(self.player.spawn_bullet())
+            self.audio.play("shoot")
 
     # ------------------------------------------------------------------ #
     # "game" state: update
@@ -183,6 +217,11 @@ class Game:
                 # so an overlapping enemy neither damages the player nor
                 # re-triggers the hit effects during invulnerability.
                 if self.player.take_hit():
+                    if self.player.dead:
+                        self.audio.play("player_death")
+                        self.audio.fade_out_music()
+                    else:
+                        self.audio.play("hit")
                     self.screen_shake.trigger()
                     self.damage_flash.trigger()
                     enemy.respawn(settings.WIDTH)
@@ -193,6 +232,7 @@ class Game:
         for bullet in self.bullets[:]:
             for enemy in self.enemies:
                 if enemy.get_rect().colliderect(bullet.get_rect()):
+                    self.audio.play("explosion")
                     self.explosions.append(
                         Explosion(enemy.x, enemy.y, settings.ENEMY_EXPLOSION_FRAME_DELAY)
                     )

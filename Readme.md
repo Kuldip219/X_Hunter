@@ -49,6 +49,7 @@ pytest
 | ← → --> Move Ship |
 | Space --> Shoot |
 | ESC --> Pause / Resume |
+| M --> Mute / Unmute |
 | Mouse --> Navigate Menus |
 
 ---
