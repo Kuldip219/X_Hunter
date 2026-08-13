@@ -29,9 +29,9 @@ class Enemy:
         """
         Spawn used only for the first wave created by reset_game().
 
-        NOTE: preserved from the original code, which used an X margin of 50
-        (player width) here instead of the enemy width (40) used by
-        respawn() below. Kept intentionally for identical behavior.
+        NOTE: uses the fixed INITIAL_ENEMY_X_MARGIN (50). Now that the enemy
+        hitbox matches the sprite (ENEMY_WIDTH = 50), respawn() uses the same
+        margin, so both spawn paths align.
         """
         x = random.randint(0, screen_width - settings.INITIAL_ENEMY_X_MARGIN)
         y = random.randint(settings.INITIAL_ENEMY_MIN_Y, settings.INITIAL_ENEMY_MAX_Y)
@@ -50,18 +50,6 @@ class Enemy:
 
     def get_rect(self) -> pygame.Rect:
         return pygame.Rect(self.x, self.y, self.width, self.height)
-
-    def contains_point(self, x: float, y: float) -> bool:
-        """
-        Point-in-rect test matching the original's manual comparison
-        (strictly exclusive on both edges), used for bullet collisions.
-        """
-        return (
-            x > self.x
-            and x < self.x + self.width
-            and y > self.y
-            and y < self.y + self.height
-        )
 
     def draw(
         self,
