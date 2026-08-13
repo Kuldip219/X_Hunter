@@ -30,13 +30,37 @@ def _draw_button(
         screen.blit(image, rect)
 
 
+def _track_hover(menu, mouse_pos: tuple[int, int]) -> None:
+    """Play the hover SFX when the mouse moves onto a different button."""
+    hovered = None
+    for name, rect in menu._buttons():
+        if rect.collidepoint(mouse_pos):
+            hovered = name
+            break
+    if hovered != menu._last_hovered:
+        menu._last_hovered = hovered
+        if hovered is not None and menu.audio is not None:
+            menu.audio.play("menu_hover")
+
+
 class MainMenu:
-    def __init__(self, assets: "Assets", screen_width: int) -> None:
+    def __init__(
+        self, assets: "Assets", screen_width: int, audio=None
+    ) -> None:
         self.assets = assets
+        self.audio = audio
+        self._last_hovered = None
         self.title_rect = assets.title_img.get_rect(center=(screen_width // 2, 150))
         self.play_rect = assets.play_img.get_rect(center=(screen_width // 2, 300))
         self.options_rect = assets.options_img.get_rect(center=(screen_width // 2, 400))
         self.exit_rect = assets.exit_img.get_rect(center=(screen_width // 2, 500))
+
+    def _buttons(self) -> list[tuple[str, pygame.Rect]]:
+        return [
+            ("play", self.play_rect),
+            ("options", self.options_rect),
+            ("exit", self.exit_rect),
+        ]
 
     def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
         screen.fill(settings.MENU_BG_COLOR)
@@ -44,6 +68,7 @@ class MainMenu:
         _draw_button(screen, self.assets.play_img, self.play_rect, mouse_pos)
         _draw_button(screen, self.assets.options_img, self.options_rect, mouse_pos)
         _draw_button(screen, self.assets.exit_img, self.exit_rect, mouse_pos)
+        _track_hover(self, mouse_pos)
 
     def handle_click(self, mouse_pos: tuple[int, int]) -> Optional[str]:
         if self.play_rect.collidepoint(mouse_pos):
@@ -56,11 +81,18 @@ class MainMenu:
 
 
 class PauseMenu:
-    def __init__(self, assets: "Assets", screen_width: int) -> None:
+    def __init__(
+        self, assets: "Assets", screen_width: int, audio=None
+    ) -> None:
         self.assets = assets
+        self.audio = audio
+        self._last_hovered = None
         self.pause_rect = assets.pause_img.get_rect(center=(screen_width // 2, 200))
         self.continue_rect = assets.continue_img.get_rect(center=(screen_width // 2, 350))
         self.quit_rect = assets.quit_img.get_rect(center=(screen_width // 2, 450))
+
+    def _buttons(self) -> list[tuple[str, pygame.Rect]]:
+        return [("continue", self.continue_rect), ("quit", self.quit_rect)]
 
     def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
         overlay = pygame.Surface(screen.get_size())
@@ -71,6 +103,7 @@ class PauseMenu:
         screen.blit(self.assets.pause_img, self.pause_rect)
         _draw_button(screen, self.assets.continue_img, self.continue_rect, mouse_pos)
         _draw_button(screen, self.assets.quit_img, self.quit_rect, mouse_pos)
+        _track_hover(self, mouse_pos)
 
     def handle_click(self, mouse_pos: tuple[int, int]) -> Optional[str]:
         if self.continue_rect.collidepoint(mouse_pos):
@@ -81,10 +114,17 @@ class PauseMenu:
 
 
 class GameOverMenu:
-    def __init__(self, assets: "Assets", screen_width: int) -> None:
+    def __init__(
+        self, assets: "Assets", screen_width: int, audio=None
+    ) -> None:
         self.assets = assets
+        self.audio = audio
+        self._last_hovered = None
         self.restart_rect = assets.restart_img.get_rect(center=(screen_width // 2, 350))
         self.quit_rect = assets.quit_gameover_img.get_rect(center=(screen_width // 2, 450))
+
+    def _buttons(self) -> list[tuple[str, pygame.Rect]]:
+        return [("restart", self.restart_rect), ("quit", self.quit_rect)]
 
     def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
         go_text = self.assets.big_font.render("GAME OVER", True, settings.GAME_OVER_COLOR)
@@ -101,6 +141,7 @@ class GameOverMenu:
 
         _draw_button(screen, self.assets.restart_img, self.restart_rect, mouse_pos)
         _draw_button(screen, self.assets.quit_gameover_img, self.quit_rect, mouse_pos)
+        _track_hover(self, mouse_pos)
 
     def handle_click(self, mouse_pos: tuple[int, int]) -> Optional[str]:
         if self.restart_rect.collidepoint(mouse_pos):

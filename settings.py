@@ -63,6 +63,22 @@ EXPLOSION_FRAME_COUNT: int = 8
 ENEMY_EXPLOSION_FRAME_DELAY: int = 3
 PLAYER_EXPLOSION_FRAME_DELAY: int = 5
 
+# --- Audio --- #
+# Sound effect files live under AUDIO_DIR (relative to the project root or
+# PyInstaller bundle). Each SFX maps a logical event name to its filename.
+AUDIO_DIR: str = "Assets/audio"
+MUSIC_FILE: str = "gameplay_music.wav"
+SFX_VOLUME: float = 0.7
+MUSIC_VOLUME: float = 0.45
+SFX_FILES: dict[str, str] = {
+    "shoot": "shoot.ogg",
+    "hit": "hit.ogg",
+    "explosion": "explosion.ogg",
+    "player_death": "player_death.ogg",
+    "menu_hover": "menu_hover.ogg",
+    "menu_click": "menu_click.ogg",
+}
+
 # --- Effects ---
 SHAKE_STRENGTH: int = 8
 SHAKE_DURATION_ON_HIT: int = 40

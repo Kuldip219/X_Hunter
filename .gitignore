@@ -15,3 +15,9 @@ venv/
 
 # Pytest cache
 .pytest_cache/
+Assets/audio/explosion.ogg
+Assets/audio/hit.ogg
+Assets/audio/menu_click.ogg
+Assets/audio/menu_hover.ogg
+Assets/audio/player_death.ogg
+Assets/audio/SOURCES.md
