@@ -26,6 +26,7 @@ class Player:
         self.health = health
         self.dead = False
         self.explosion: Optional[Explosion] = None
+        self.invulnerable_timer = 0
 
     def handle_input(self, keys: Sequence[bool]) -> None:
         """Move left/right based on currently-held keys. No-op while dead."""
@@ -45,13 +46,31 @@ class Player:
     def spawn_bullet(self) -> Bullet:
         return Bullet(self.x + self.width // 2, self.y)
 
-    def take_hit(self) -> None:
+    def update_invulnerability(self) -> None:
+        """Decrement the i-frame timer once per frame (no-op while safe)."""
+        if self.invulnerable_timer > 0:
+            self.invulnerable_timer -= 1
+
+    @property
+    def invulnerable(self) -> bool:
+        """True while the post-hit i-frame window is active."""
+        return self.invulnerable_timer > 0
+
+    def take_hit(self) -> bool:
         """
-        Apply one hit of damage. If health drops to 0, kill the player and
-        create the death explosion, exactly matching the original logic
-        (player is teleported off-screen and hidden while its explosion
-        plays out).
+        Apply one hit of damage. Returns True if damage was actually applied.
+
+        After a successful hit the player gets a short invulnerability window
+        (i-frames) during which further calls are no-ops, so overlapping
+        enemies can no longer drain multiple HP per frame. A hit that brings
+        health to 0 kills the player immediately - the i-frame window does NOT
+        apply to the death sequence itself. The player is teleported
+        off-screen and hidden while its death explosion plays out, exactly
+        matching the original logic.
         """
+        if self.invulnerable:
+            return False
+
         self.health -= 1
 
         if self.health <= 0:
@@ -65,6 +84,10 @@ class Player:
             self.y = -1000
 
             self.dead = True
+        else:
+            self.invulnerable_timer = settings.PLAYER_INVULNERABLE_DURATION
+
+        return True
 
     def draw(
         self,
@@ -72,5 +95,13 @@ class Player:
         image: pygame.Surface,
         offset: tuple[int, int] = (0, 0),
     ) -> None:
-        if not self.dead:
-            screen.blit(image, (self.x + offset[0], self.y + offset[1]))
+        if self.dead:
+            return
+        # Blink while invulnerable so the temporary safety is visible.
+        if self.invulnerable and not self._blink_visible():
+            return
+        screen.blit(image, (self.x + offset[0], self.y + offset[1]))
+
+    def _blink_visible(self) -> bool:
+        """Toggle visibility every PLAYER_BLINK_INTERVAL frames while invulnerable."""
+        return (self.invulnerable_timer // settings.PLAYER_BLINK_INTERVAL) % 2 == 0

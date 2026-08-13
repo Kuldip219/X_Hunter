@@ -23,6 +23,12 @@ PLAYER_SPEED: int = 5
 PLAYER_START_HEALTH: int = 5
 PLAYER_IMG_SIZE: tuple[int, int] = (65, 80)
 
+# --- Invulnerability (i-frames) --- #
+# After taking a hit the player is immune for this many frames (~1 s at 60 FPS)
+# and blinks every PLAYER_BLINK_INTERVAL frames to show they are safe.
+PLAYER_INVULNERABLE_DURATION: int = 60
+PLAYER_BLINK_INTERVAL: int = 6
+
 # --- Bullet --- #
 BULLET_SPEED: int = 10
 BULLET_IMG_SIZE: tuple[int, int] = (10, 20)
