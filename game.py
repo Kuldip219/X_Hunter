@@ -140,7 +140,9 @@ class Game:
                 self.fade.start("menu")
 
     def _handle_keydown(self, key: int) -> None:
-        if key == pygame.K_ESCAPE and self.state == "game":
+        # While the player is dead, gameplay is frozen: ESC cannot pause and
+        # Space cannot fire until the game-over transition completes.
+        if key == pygame.K_ESCAPE and self.state == "game" and not self.player.dead:
             self.fade.start("pause")
         elif key == pygame.K_ESCAPE and self.state == "pause":
             self.fade.start("game")
@@ -148,7 +150,7 @@ class Game:
         if key == pygame.K_ESCAPE and self.state == "options":
             self.fade.start("menu")
 
-        if key == pygame.K_SPACE and self.state == "game":
+        if key == pygame.K_SPACE and self.state == "game" and not self.player.dead:
             self.bullets.append(self.player.spawn_bullet())
 
     # ------------------------------------------------------------------ #
@@ -156,6 +158,15 @@ class Game:
     # ------------------------------------------------------------------ #
 
     def _update_game(self, keys: pygame.key.ScancodeWrapper) -> None:
+        # Once the player is dead, gameplay is fully frozen - no input, no
+        # collisions, no bullet/enemy movement - until the state machine has
+        # actually transitioned away from "game" (the fade-out to "game_over"
+        # is triggered in _draw_game()). The player stays dead throughout; it
+        # must never flip back to False and become movable/collidable again.
+        if self.player.dead:
+            return
+
+        self.player.update_invulnerability()
         self.player.handle_input(keys)
         self.player.clamp_to_screen(settings.WIDTH)
 
@@ -167,11 +178,14 @@ class Game:
         for enemy in self.enemies:
             enemy.update()
 
-            if not self.player.dead and enemy.get_rect().colliderect(self.player.get_rect()):
-                self.player.take_hit()
-                self.screen_shake.trigger()
-                self.damage_flash.trigger()
-                enemy.respawn(settings.WIDTH)
+            if enemy.get_rect().colliderect(self.player.get_rect()):
+                # take_hit() returns False while the i-frame window is active,
+                # so an overlapping enemy neither damages the player nor
+                # re-triggers the hit effects during invulnerability.
+                if self.player.take_hit():
+                    self.screen_shake.trigger()
+                    self.damage_flash.trigger()
+                    enemy.respawn(settings.WIDTH)
 
             if enemy.is_off_screen(settings.HEIGHT):
                 enemy.respawn(settings.WIDTH)
@@ -222,8 +236,11 @@ class Game:
                 # NOTE: drawn without the shake offset, matching the original.
                 self.player.explosion.draw(self.screen, self.assets.explosion_frames)
                 self.player.explosion.advance()
-            else:
-                self.player.dead = False
+            elif not self.fade.fading_out:
+                # Start the fade to game-over exactly once. The player stays
+                # dead (never flips back to False), so gameplay remains frozen
+                # until the fade completes and the state switches to
+                # "game_over" - no revival, no re-hits during the fade-out.
                 self.fade.start("game_over")
                 self.player.explosion = None
 
