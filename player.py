@@ -60,20 +60,21 @@ class Player:
         """
         Apply one hit of damage. Returns True if damage was actually applied.
 
-        After a successful hit the player gets a short invulnerability window
-        (i-frames) during which further calls are no-ops, so overlapping
-        enemies can no longer drain multiple HP per frame. A hit that brings
-        health to 0 kills the player immediately - the i-frame window does NOT
-        apply to the death sequence itself. The player is teleported
-        off-screen and hidden while its death explosion plays out, exactly
-        matching the original logic.
+        Lethality is checked first: a hit that would bring health to 0 (or
+        below) always applies and triggers death, even while the player is
+        invulnerable - the i-frame window never protects the death sequence
+        itself. Only non-lethal hits are blocked during the window, so
+        overlapping enemies can no longer drain multiple HP per frame. The
+        player is teleported off-screen and hidden while its death explosion
+        plays out, exactly matching the original logic.
         """
-        if self.invulnerable:
+        # A dead player cannot be hit again: the death sequence must never
+        # re-trigger, no matter who calls take_hit.
+        if self.dead:
             return False
 
-        self.health -= 1
-
-        if self.health <= 0:
+        # A lethal hit always lands, regardless of the invulnerability state.
+        if self.health <= 1:
             self.health = 0
 
             self.explosion = Explosion(
@@ -84,9 +85,13 @@ class Player:
             self.y = -1000
 
             self.dead = True
-        else:
-            self.invulnerable_timer = settings.PLAYER_INVULNERABLE_DURATION
+            return True
 
+        if self.invulnerable:
+            return False
+
+        self.health -= 1
+        self.invulnerable_timer = settings.PLAYER_INVULNERABLE_DURATION
         return True
 
     def draw(
