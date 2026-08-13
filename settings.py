@@ -50,6 +50,31 @@ ENEMY_HEIGHT: int = 50
 ENEMY_SPEED: int = 5
 ENEMY_IMG_SIZE: tuple[int, int] = (50, 50)
 
+# --- Difficulty ramp --- #
+# Difficulty is a single value in [0, DIFFICULTY_MAX] blended from two
+# saturated terms:
+#   time_term  = min(elapsed_seconds / DIFFICULTY_TIME_TO_FULL, 1)
+#   score_term = min(score / DIFFICULTY_SCORE_TO_FULL, 1)
+#   difficulty = min(time_weight*time_term + score_weight*score_term, MAX)
+# Each input alone reaches only its weighted share, so both survival time
+# AND scoring matter throughout; the cap keeps the game fair. This ramps
+# invisibly (no UI) - the player just feels it get harder.
+DIFFICULTY_TIME_WEIGHT: float = 0.5
+DIFFICULTY_SCORE_WEIGHT: float = 0.5
+DIFFICULTY_TIME_TO_FULL: float = 180.0  # seconds of survival to saturate the time term
+DIFFICULTY_SCORE_TO_FULL: float = 50.0  # score to saturate the score term
+DIFFICULTY_MAX: float = 1.0
+
+# Enemy speed scales as: min(ENEMY_SPEED + ENEMY_SPEED_GAIN*difficulty, ENEMY_MAX_SPEED)
+# At max difficulty: 5 + 4 = 9 px/frame (540 px/s) - faster but still reactable.
+ENEMY_SPEED_GAIN: int = 4
+ENEMY_MAX_SPEED: int = 9
+
+# Active enemy count scales as: min(INITIAL_ENEMY_COUNT + ENEMY_COUNT_GAIN*difficulty, ENEMY_MAX_COUNT)
+# At max difficulty the field doubles from 5 to 10 enemies.
+ENEMY_COUNT_GAIN: int = 5
+ENEMY_MAX_COUNT: int = 10
+
 # NOTE: the initial wave spawned by reset_game() uses a fixed X margin of 50.
 # Since the enemy hitbox was resized to match the sprite (ENEMY_WIDTH 40 -> 50),
 # respawn() now uses the same 50px margin, so the two spawn paths line up.
