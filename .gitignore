@@ -15,6 +15,11 @@ venv/
 
 # Pytest cache
 .pytest_cache/
+
+# Local high-score leaderboard (user data written at runtime)
+highscores.json
+highscores.json.tmp
+
 Assets/audio/explosion.ogg
 Assets/audio/hit.ogg
 Assets/audio/menu_click.ogg
