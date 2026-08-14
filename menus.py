@@ -189,27 +189,56 @@ class OptionsScreen:
         self._last_hovered = None
         self.screen_width = screen_width
         self.screen_height = screen_height
-        self.high_scores_rect = assets.score_img.get_rect(
-            center=(screen_width // 2, 680)
-        )
-        # The same back.png banner the high-scores screen uses (shared
-        # loading/scaling helper in assets.py): a second way to trigger the
-        # ESC-from-options action (return to the main menu).
-        self.back_rect = assets.back_img.get_rect(
-            center=(screen_width // 2, 765)
-        )
         self._dragging: Optional[str] = None  # "music" | "sfx" | None
 
-        # Volume slider rows: (key, label, track rect). The track is centered
-        # horizontally with the label left of it and the % readout right.
+        # --- Vertical layout, computed top-down from measured text heights
+        # using the OPTIONS_ITEM_GAP / OPTIONS_SECTION_GAP rhythm --- #
+        title_h = self.assets.big_font.size("OPTIONS")[1]
+        label_h = self.assets.font.size("Music Volume")[1]
+        banner_h = self.assets.score_img.get_height()
+        back_h = self.assets.back_img.get_height()
+        self.title_y = settings.OPTIONS_TITLE_Y
+
+        # Volume slider rows: the label and track share one anchor y; the
+        # two sliders are related items, so ITEM_GAP apart.
         track_size = settings.SLIDER_TRACK_SIZE
         self.slider_tracks: dict[str, pygame.Rect] = {}
         self.slider_labels: dict[str, tuple[str, int]] = {}
-        for name, label, y in (("music", "Music Volume", 240), ("sfx", "SFX Volume", 310)):
+        y = self.title_y + title_h // 2 + settings.OPTIONS_SECTION_GAP
+        for name, label in (("music", "Music Volume"), ("sfx", "SFX Volume")):
+            anchor = y + label_h // 2
             track = pygame.Rect(0, 0, track_size[0], track_size[1])
-            track.center = (screen_width // 2 + 50, y)
+            track.center = (screen_width // 2 + 50, anchor)
             self.slider_tracks[name] = track
-            self.slider_labels[name] = (label, y)
+            self.slider_labels[name] = (label, anchor)
+            y += label_h + settings.OPTIONS_ITEM_GAP
+
+        # Controls section: SECTION_GAP after the sliders, then the heading
+        # and each grid row ITEM_GAP apart (the six bindings pair up into a
+        # 2x3 grid, so only len(CONTROLS) // 2 rows).
+        grid_rows = (len(settings.CONTROLS) + 1) // 2
+        y += settings.OPTIONS_SECTION_GAP - settings.OPTIONS_ITEM_GAP
+        self.controls_heading_y = y + label_h // 2
+        row1_top = y + label_h + settings.OPTIONS_ITEM_GAP
+        self.controls_row_ys = [
+            row1_top + i * (label_h + settings.OPTIONS_ITEM_GAP) + label_h // 2
+            for i in range(grid_rows)
+        ]
+
+        # Bottom block: HIGH SCORES banner, then (related) the BACK button -
+        # the same back.png the high-scores screen uses, a second way to
+        # trigger the ESC-from-options action (return to the main menu).
+        last_row_top = row1_top + (grid_rows - 1) * (label_h + settings.OPTIONS_ITEM_GAP)
+        bottom_top = last_row_top + label_h + settings.OPTIONS_SECTION_GAP
+        self.high_scores_rect = assets.score_img.get_rect(
+            center=(screen_width // 2, bottom_top + banner_h // 2)
+        )
+        self.back_rect = assets.back_img.get_rect(
+            center=(
+                screen_width // 2,
+                bottom_top + banner_h + settings.OPTIONS_ITEM_GAP + back_h // 2,
+            )
+        )
 
     # ------------------------------------------------------------------ #
     # Buttons (hover SFX + high-scores entry)
@@ -310,16 +339,33 @@ class OptionsScreen:
 
     def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
         title = self.assets.big_font.render("OPTIONS", True, settings.WHITE)
-        screen.blit(title, title.get_rect(center=(self.screen_width // 2, 100)))
+        screen.blit(title, title.get_rect(center=(self.screen_width // 2, self.title_y)))
 
         self._draw_slider(screen, "music")
         self._draw_slider(screen, "sfx")
 
         controls_heading = self.assets.font.render("CONTROLS", True, settings.LIGHT_GRAY)
-        screen.blit(controls_heading, controls_heading.get_rect(center=(self.screen_width // 2, 400)))
-        for i, (action, key) in enumerate(settings.CONTROLS):
-            row = self.assets.font.render(f"{action}: {key}", True, settings.WHITE)
-            screen.blit(row, row.get_rect(center=(self.screen_width // 2, 440 + i * 40)))
+        screen.blit(
+            controls_heading,
+            controls_heading.get_rect(center=(self.screen_width // 2, self.controls_heading_y)),
+        )
+        # Controls grid: 3 rows x 2 bindings. Each cell is an action label
+        # (midleft) with its key (midright); row-major pairing keeps the
+        # original order in a natural grouping: (Move, Fire), (Pause, Mute),
+        # (Back, Restart).
+        a1x, k1x, a2x, k2x = settings.OPTIONS_GRID_X
+        grid_rows = (len(settings.CONTROLS) + 1) // 2
+        for i in range(grid_rows):
+            y = self.controls_row_ys[i]
+            for col, idx in enumerate((i * 2, i * 2 + 1)):
+                if idx >= len(settings.CONTROLS):
+                    continue
+                action, key = settings.CONTROLS[idx]
+                ax, kx = (a1x, k1x) if col == 0 else (a2x, k2x)
+                action_img = self.assets.font.render(action, True, settings.WHITE)
+                screen.blit(action_img, action_img.get_rect(midleft=(ax, y)))
+                key_img = self.assets.font.render(key, True, settings.LIGHT_GRAY)
+                screen.blit(key_img, key_img.get_rect(midright=(kx, y)))
 
         _draw_button(screen, self.assets.score_img, self.high_scores_rect, mouse_pos)
         _draw_button(screen, self.assets.back_img, self.back_rect, mouse_pos)

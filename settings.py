@@ -139,6 +139,24 @@ SETTINGS_FILE: str = "settings.json"
 SLIDER_TRACK_SIZE: tuple[int, int] = (220, 12)
 SLIDER_HANDLE_SIZE: tuple[int, int] = (18, 26)
 
+# Vertical spacing system for the Options screen: related rows sit
+# OPTIONS_ITEM_GAP apart (edge to edge) and unrelated sections sit
+# OPTIONS_SECTION_GAP apart, giving the whole screen one consistent rhythm
+# (generous between sections, tighter within a section). Every y-position is
+# computed top-down in OptionsScreen from measured text heights using these
+# constants - no magic numbers - so adding an element can't silently break
+# the layout again.
+OPTIONS_TITLE_Y: int = 100
+OPTIONS_SECTION_GAP: int = 50
+OPTIONS_ITEM_GAP: int = 24
+# Controls reference: a 2x3 grid (three rows, two bindings per row) - six
+# full-width rows plus sliders, banner and BACK cannot fit 600x800 with
+# consistent breathing room, so the six bindings pair up row-major as
+# (Move, Fire), (Pause, Mute), (Back, Restart). Each cell draws its action
+# label midleft and its key midright; OPTIONS_GRID_X holds the four anchor
+# x positions: (cell1 action, cell1 key, cell2 action, cell2 key).
+OPTIONS_GRID_X: tuple[int, int, int, int] = (55, 305, 335, 570)
+
 # --- Controls reference (read-only, sourced from the real bindings) --- #
 # Each row is (action, key). These match the actual input handling: player
 # movement reads K_LEFT/K_RIGHT (player.py handle_input), firing is K_SPACE

@@ -252,6 +252,21 @@ such hint either). Clicking BACK triggers exactly the same fade to the main
 menu as ESC — additive, ESC unchanged, and BACK is hover-SFX tracked like the
 other buttons.
 
+### 3.18 Options screen spacing system (uncommitted) — **112 tests**
+
+Audited the incremental layout: control rows sat ~1px apart, the CONTROLS
+heading touched row 1, the last row OVERLAPPED the HIGH SCORES banner by
+12px, and the bottom margin was 5px. Established a two-value spacing system
+in settings.py — `OPTIONS_SECTION_GAP = 50` (between unrelated sections) and
+`OPTIONS_ITEM_GAP = 24` (between related rows) — and recomputed every
+Options y-position top-down from measured text heights (no magic numbers,
+so the rhythm can't drift when an element is added). Six full-width control
+rows cannot fit 600×800 with breathing room, so the controls reference
+became a 2×3 grid (two bindings per row: Move/Fire, Pause/Mute,
+Back/Restart) with per-cell action/key anchor columns
+(`OPTIONS_GRID_X`). Pure repositioning — no element, font, asset, or logic
+changed; all 112 tests pass unmodified (none hardcode coordinates).
+
 ## 5. Current repo state
 
 ```
