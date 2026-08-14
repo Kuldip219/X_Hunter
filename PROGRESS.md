@@ -215,9 +215,39 @@ ratio, and fall back to font-rendered buttons if missing (non-fatal). BACK
 and ESC on the high-scores screen return to Options (one level up), matching
 ESC-from-Options → main menu. Leaderboard logic/storage untouched.
 
+### 3.15 Menu button spacing restored (uncommitted)
+
+Removing the HIGH SCORES button (§3.14) left stale y-positions: the game-over
+QUIT button sat at 490 (a leftover from when a third button lived at 410),
+and the main menu had 90px/180px gaps where a 100px rhythm used to be. Both
+menus restored to the original uniform 100px center-to-center spacing: game
+over restart 330→350 / quit 490→450, main play 290→300 / options 380→400 /
+exit 560→500 (pause was already 350/450). Pure layout change, no logic or
+navigation touched.
+
+### 3.16 Options screen: volume sliders + controls reference (uncommitted) — **110 tests**
+
+Replaced the options placeholder with a real screen: two live volume sliders
+(music / SFX, 0-100%), a read-only controls reference (sourced from the actual
+bindings: LEFT/RIGHT, SPACE hold-to-fire, ESC pause/back, M mute, RESTART
+button), the HIGH SCORES banner, and the ESC hint. New `settings_store.py`
+(`UserSettings`, mirroring `highscores.py`'s defensive load + atomic save)
+persists `music_volume`/`sfx_volume` to `settings.json` (gitignored); defaults
+are the existing out-of-the-box volumes (0.45 / 0.7). Sliders are draggable
+(mouse-down grabs, motion follows, release persists once); changes apply live
+via new `AudioManager.set_music_volume` / `set_sfx_volume` (both live in
+pygame — music via `mixer.music.set_volume`, SFX via `Sound.set_volume` on
+every loaded sound). Volumes are applied on launch before any audio plays, and
+mute (M) stays independent of the slider values (unmuting restores exactly
+where they were). `game.py` gained MOUSEMOTION/MOUSEBUTTONUP handling for
+slider drags in the options state.
+
 ## 5. Current repo state
 
 ```
+1817c9e Add persistent high-score leaderboard and UI
+49d0aa1 Add fixed-timestep accumulator and tests
+ccd11af Convert game to delta-time (px/s) and update tests
 6c92ca9 Add difficulty ramp and integrate into game
 4fbdd5e Implement hold-to-fire with cooldown
 c55870e Add audio manager and integrate SFX/music
@@ -232,15 +262,16 @@ d6c3b9f Reorganize download and built with sections in README
 a9e5b5b Initial commit
 ```
 
-- **Tracked files:** 71 (all source/assets/tests).
-- **Tests:** 86 passing, 1 warning (the intentional mixer-failure test) in ~10 s.
+- **Tracked files:** 72 (all source/assets/tests; +1 for `settings_store.py`).
+- **Tests:** 110 passing, 1 warning (the intentional mixer-failure test) in ~11 s.
 - **Uncommitted:** the delta-time conversion, fixed-timestep accumulator, the
-  high-score leaderboard, and the Options-screen navigation change
-  (`settings.py`, `player.py`, `enemy.py`, `bullet.py`, `game.py`, `menus.py`,
-  `assets.py`, new `highscores.py`, updated test files incl.
-  `tests/test_highscores.py`). Also note: `AUDIT.md` and `PROGRESS.md` were
-  deleted in the working tree outside this work (this file restores
-  `PROGRESS.md`).
+  high-score leaderboard, the Options-screen navigation change, and the new
+  Options volume/controls screen (`settings.py`, `player.py`, `enemy.py`,
+  `bullet.py`, `game.py`, `menus.py`, `assets.py`, `audio.py`, new
+  `highscores.py`, new `settings_store.py`, updated test files incl.
+  `tests/test_highscores.py`, `tests/test_options.py`, `tests/test_settings_store.py`).
+  Also note: `AUDIT.md` and `PROGRESS.md` were deleted in the working tree
+  outside this work (this file restores `PROGRESS.md`).
 - **Live preview:** registered at `http://127.0.0.1:8123/frame.html` (headless
   autopilot streaming real game frames; see `.freebuff/run.md`).
 
@@ -249,7 +280,8 @@ a9e5b5b Initial commit
 - **FPS counter** in the HUD to verify dt/accumulator behavior by eye.
 - **Interpolation between sim steps** for perfectly smooth rendering at high
   refresh rates (currently render shows the latest fixed step's state).
-- **Options screen** (volume control, difficulty tuning) — audio mute is global only.
+- **Options screen** — volumes done; remaining ideas: difficulty tuning, key
+  rebinding, per-channel volume vs. master mute.
 - **Audio for the menu** (calmer loop, nice-to-have).
 - **Difficulty clock includes pause time** — excluding paused time is a possible tweak.
 - **Hold-to-fire cadence tuning** (`PLAYER_FIRE_COOLDOWN_SECONDS` is a single constant).

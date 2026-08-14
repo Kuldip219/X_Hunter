@@ -15,6 +15,7 @@ from explosion import Explosion
 from highscores import HighScoreTable
 from menus import GameOverMenu, HighScoresMenu, MainMenu, OptionsScreen, PauseMenu
 from player import Player
+from settings_store import UserSettings
 
 
 class Game:
@@ -28,7 +29,10 @@ class Game:
 
         self.assets = Assets.load()
 
-        self.audio = AudioManager()
+        # Persisted user settings (music/SFX volumes). Loaded before the audio
+        # manager is built so its volumes are applied before anything plays.
+        self.user_settings = UserSettings.load()
+        self.audio = AudioManager(settings_store=self.user_settings)
 
         # Persistent top-10 leaderboard (JSON next to the working dir).
         # last_run_rank tracks where the most recent run landed on it (None
@@ -40,7 +44,10 @@ class Game:
         self.main_menu = MainMenu(self.assets, settings.WIDTH, audio=self.audio)
         self.pause_menu = PauseMenu(self.assets, settings.WIDTH, audio=self.audio)
         self.game_over_menu = GameOverMenu(self.assets, settings.WIDTH, audio=self.audio)
-        self.options_screen = OptionsScreen(self.assets, settings.WIDTH, settings.HEIGHT, audio=self.audio)
+        self.options_screen = OptionsScreen(
+            self.assets, settings.WIDTH, settings.HEIGHT,
+            audio=self.audio, store=self.user_settings,
+        )
         self.high_scores_menu = HighScoresMenu(
             self.assets, settings.WIDTH, settings.HEIGHT, table=self.high_scores, audio=self.audio
         )
@@ -183,6 +190,8 @@ class Game:
     def _change_state(self, new_state: str) -> None:
         """Apply a completed state transition and keep the music in sync."""
         self.state = new_state
+        # A slider drag must never survive a state change (e.g. ESC mid-drag).
+        self.options_screen._dragging = None
         if new_state == "game":
             self.audio.play_music()
         elif new_state == "pause":
@@ -208,6 +217,14 @@ class Game:
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self._handle_mouse_click(mouse_pos)
 
+            # Slider drag support on the Options screen: motion follows the
+            # mouse while a slider is held, release persists the final value.
+            if event.type == pygame.MOUSEMOTION and self.state == "options":
+                self.options_screen.handle_mouse_motion(event.pos)
+
+            if event.type == pygame.MOUSEBUTTONUP and self.state == "options":
+                self.options_screen.handle_mouse_up(event.pos)
+
             if event.type == pygame.KEYDOWN:
                 self._handle_keydown(event.key)
 
@@ -225,6 +242,10 @@ class Game:
                 self.running = False
 
         elif self.state == "options":
+            # A press on a slider track/handle is grabbed by the slider (no
+            # click SFX); otherwise fall through to the HIGH SCORES button.
+            if self.options_screen.handle_mouse_down(mouse_pos):
+                return
             action = self.options_screen.handle_click(mouse_pos)
             if action:
                 self.audio.play("menu_click")
