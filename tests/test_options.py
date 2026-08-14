@@ -211,6 +211,22 @@ def test_esc_from_options_returns_to_menu(game):
     assert game.state == "menu"
 
 
+def test_three_bottom_buttons_evenly_spaced(game):
+    """HIGH SCORES, CONTROLS and BACK are three image buttons with equal
+    edge-to-edge gaps (OPTIONS_ITEM_GAP), not just present."""
+    os_ = _enter_options(game)
+    gap1 = os_.controls_rect.top - os_.high_scores_rect.bottom
+    gap2 = os_.back_rect.top - os_.controls_rect.bottom
+    assert gap1 == gap2 == settings.OPTIONS_ITEM_GAP
+
+
+def test_controls_button_exists_on_options(game):
+    os_ = _enter_options(game)
+    assert hasattr(os_, "controls_rect")
+    game._handle_mouse_click(os_.controls_rect.center)
+    assert game.fade.next_state == "controls"
+
+
 def test_back_button_returns_to_menu(game):
     os_ = _enter_options(game)
     game._handle_mouse_click(os_.back_rect.center)

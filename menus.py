@@ -1,9 +1,9 @@
 """
 Menu screens: main menu, pause menu, game-over menu, the options screen
-(volume sliders + controls reference + high-scores entry), and the
-high-scores leaderboard screen. Each menu knows how to draw itself and
-how to turn mouse input into actions, keeping that logic out of the main
-loop.
+(volume sliders + three image buttons), the controls keybind screen, and
+the high-scores leaderboard screen. Each menu knows how to draw itself
+and how to turn mouse input into actions, keeping that logic out of the
+main loop.
 """
 
 from __future__ import annotations
@@ -165,9 +165,9 @@ class GameOverMenu:
 
 
 class OptionsScreen:
-    """Options: two live volume sliders (music / SFX), a read-only controls
-    reference, the HIGH SCORES banner (score.png, the leaderboard's entry
-    point), and the ESC hint for going back.
+    """Options: two live volume sliders (music / SFX) and a row of three
+    image buttons - HIGH SCORES (score.png), CONTROLS (controls.png) and
+    BACK (back.png) - evenly spaced with the OPTIONS_ITEM_GAP rhythm.
 
     Sliders are mouse-draggable: clicking anywhere on a track jumps the
     handle there, and the handle drags while the button is held. Values are
@@ -195,8 +195,6 @@ class OptionsScreen:
         # using the OPTIONS_ITEM_GAP / OPTIONS_SECTION_GAP rhythm --- #
         title_h = self.assets.big_font.size("OPTIONS")[1]
         label_h = self.assets.font.size("Music Volume")[1]
-        banner_h = self.assets.score_img.get_height()
-        back_h = self.assets.back_img.get_height()
         self.title_y = settings.OPTIONS_TITLE_Y
 
         # Volume slider rows: the label and track share one anchor y; the
@@ -213,31 +211,23 @@ class OptionsScreen:
             self.slider_labels[name] = (label, anchor)
             y += label_h + settings.OPTIONS_ITEM_GAP
 
-        # Controls section: SECTION_GAP after the sliders, then the heading
-        # and each grid row ITEM_GAP apart (the six bindings pair up into a
-        # 2x3 grid, so only len(CONTROLS) // 2 rows).
-        grid_rows = (len(settings.CONTROLS) + 1) // 2
+        # Three image buttons (HIGH SCORES, CONTROLS, BACK) sit in the space
+        # the controls list used to occupy: SECTION_GAP below the sliders,
+        # each button ITEM_GAP apart so all three gaps are equal.
+        banner_h = self.assets.score_img.get_height()
+        controls_h = self.assets.controls_img.get_height()
+        back_h = self.assets.back_img.get_height()
         y += settings.OPTIONS_SECTION_GAP - settings.OPTIONS_ITEM_GAP
-        self.controls_heading_y = y + label_h // 2
-        row1_top = y + label_h + settings.OPTIONS_ITEM_GAP
-        self.controls_row_ys = [
-            row1_top + i * (label_h + settings.OPTIONS_ITEM_GAP) + label_h // 2
-            for i in range(grid_rows)
-        ]
-
-        # Bottom block: HIGH SCORES banner, then (related) the BACK button -
-        # the same back.png the high-scores screen uses, a second way to
-        # trigger the ESC-from-options action (return to the main menu).
-        last_row_top = row1_top + (grid_rows - 1) * (label_h + settings.OPTIONS_ITEM_GAP)
-        bottom_top = last_row_top + label_h + settings.OPTIONS_SECTION_GAP
         self.high_scores_rect = assets.score_img.get_rect(
-            center=(screen_width // 2, bottom_top + banner_h // 2)
+            center=(screen_width // 2, y + banner_h // 2)
         )
+        y += banner_h + settings.OPTIONS_ITEM_GAP
+        self.controls_rect = assets.controls_img.get_rect(
+            center=(screen_width // 2, y + controls_h // 2)
+        )
+        y += controls_h + settings.OPTIONS_ITEM_GAP
         self.back_rect = assets.back_img.get_rect(
-            center=(
-                screen_width // 2,
-                bottom_top + banner_h + settings.OPTIONS_ITEM_GAP + back_h // 2,
-            )
+            center=(screen_width // 2, y + back_h // 2)
         )
 
     # ------------------------------------------------------------------ #
@@ -245,11 +235,17 @@ class OptionsScreen:
     # ------------------------------------------------------------------ #
 
     def _buttons(self) -> list[tuple[str, pygame.Rect]]:
-        return [("high_scores", self.high_scores_rect), ("back", self.back_rect)]
+        return [
+            ("high_scores", self.high_scores_rect),
+            ("controls", self.controls_rect),
+            ("back", self.back_rect),
+        ]
 
     def handle_click(self, mouse_pos: tuple[int, int]) -> Optional[str]:
         if self.high_scores_rect.collidepoint(mouse_pos):
             return "high_scores"
+        if self.controls_rect.collidepoint(mouse_pos):
+            return "controls"
         if self.back_rect.collidepoint(mouse_pos):
             return "back"
         return None
@@ -344,32 +340,68 @@ class OptionsScreen:
         self._draw_slider(screen, "music")
         self._draw_slider(screen, "sfx")
 
-        controls_heading = self.assets.font.render("CONTROLS", True, settings.LIGHT_GRAY)
-        screen.blit(
-            controls_heading,
-            controls_heading.get_rect(center=(self.screen_width // 2, self.controls_heading_y)),
-        )
-        # Controls grid: 3 rows x 2 bindings. Each cell is an action label
-        # (midleft) with its key (midright); row-major pairing keeps the
-        # original order in a natural grouping: (Move, Fire), (Pause, Mute),
-        # (Back, Restart).
-        a1x, k1x, a2x, k2x = settings.OPTIONS_GRID_X
-        grid_rows = (len(settings.CONTROLS) + 1) // 2
-        for i in range(grid_rows):
-            y = self.controls_row_ys[i]
-            for col, idx in enumerate((i * 2, i * 2 + 1)):
-                if idx >= len(settings.CONTROLS):
-                    continue
-                action, key = settings.CONTROLS[idx]
-                ax, kx = (a1x, k1x) if col == 0 else (a2x, k2x)
-                action_img = self.assets.font.render(action, True, settings.WHITE)
-                screen.blit(action_img, action_img.get_rect(midleft=(ax, y)))
-                key_img = self.assets.font.render(key, True, settings.LIGHT_GRAY)
-                screen.blit(key_img, key_img.get_rect(midright=(kx, y)))
-
         _draw_button(screen, self.assets.score_img, self.high_scores_rect, mouse_pos)
+        _draw_button(screen, self.assets.controls_img, self.controls_rect, mouse_pos)
         _draw_button(screen, self.assets.back_img, self.back_rect, mouse_pos)
         _track_hover(self, mouse_pos)
+
+
+class ControlsScreen:
+    """Read-only keybind reference, moved off the Options screen so it can
+    breathe: one binding per row in a single column. Reached only via the
+    Options screen (controls.png button); its BACK button (back.png) returns
+    to Options, one level up - same convention as the high-scores screen.
+    """
+
+    def __init__(
+        self,
+        assets: "Assets",
+        screen_width: int,
+        screen_height: int,
+        audio=None,
+    ) -> None:
+        self.assets = assets
+        self.audio = audio
+        self._last_hovered = None
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.back_img = assets.back_img
+        self.back_rect = self.back_img.get_rect(
+            center=(screen_width // 2, screen_height - 70)
+        )
+        self.title_y = settings.CONTROLS_TITLE_Y
+        self.row_ys = [
+            settings.CONTROLS_ROWS_TOP + i * settings.CONTROLS_ROW_GAP
+            for i in range(len(settings.CONTROLS))
+        ]
+
+    def _buttons(self) -> list[tuple[str, pygame.Rect]]:
+        return [("back", self.back_rect)]
+
+    def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
+        screen.fill(settings.MENU_BG_COLOR)
+        title = self.assets.big_font.render("CONTROLS", True, settings.WHITE)
+        screen.blit(title, title.get_rect(center=(self.screen_width // 2, self.title_y)))
+
+        for (action, key), y in zip(settings.CONTROLS, self.row_ys):
+            action_img = self.assets.font.render(action, True, settings.WHITE)
+            screen.blit(
+                action_img,
+                action_img.get_rect(midleft=(settings.CONTROLS_ACTION_X, y)),
+            )
+            key_img = self.assets.font.render(key, True, settings.LIGHT_GRAY)
+            screen.blit(
+                key_img,
+                key_img.get_rect(midright=(settings.CONTROLS_KEY_X, y)),
+            )
+
+        _draw_button(screen, self.back_img, self.back_rect, mouse_pos)
+        _track_hover(self, mouse_pos)
+
+    def handle_click(self, mouse_pos: tuple[int, int]) -> Optional[str]:
+        if self.back_rect.collidepoint(mouse_pos):
+            return "back"
+        return None
 
 
 class HighScoresMenu:

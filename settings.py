@@ -149,13 +149,21 @@ SLIDER_HANDLE_SIZE: tuple[int, int] = (18, 26)
 OPTIONS_TITLE_Y: int = 100
 OPTIONS_SECTION_GAP: int = 50
 OPTIONS_ITEM_GAP: int = 24
-# Controls reference: a 2x3 grid (three rows, two bindings per row) - six
-# full-width rows plus sliders, banner and BACK cannot fit 600x800 with
-# consistent breathing room, so the six bindings pair up row-major as
-# (Move, Fire), (Pause, Mute), (Back, Restart). Each cell draws its action
-# label midleft and its key midright; OPTIONS_GRID_X holds the four anchor
-# x positions: (cell1 action, cell1 key, cell2 action, cell2 key).
-OPTIONS_GRID_X: tuple[int, int, int, int] = (55, 305, 335, 570)
+# Menu banner images scale to fit WITHIN their footprints, preserving
+# aspect ratio (never stretched/distorted). controls.png is the CONTROLS
+# button on the Options screen.
+CONTROLS_IMG_SIZE: tuple[int, int] = (250, 80)
+
+# --- Controls screen --- #
+# The keybind reference got its own full screen, so it can breathe: one
+# binding per row, CONTROLS_ROW_GAP apart (center-to-center), first row at
+# CONTROLS_ROWS_TOP. Each row draws its action label midleft at
+# CONTROLS_ACTION_X and its key midright at CONTROLS_KEY_X.
+CONTROLS_TITLE_Y: int = 120
+CONTROLS_ROWS_TOP: int = 280
+CONTROLS_ROW_GAP: int = 60
+CONTROLS_ACTION_X: int = 120
+CONTROLS_KEY_X: int = 470
 
 # --- Controls reference (read-only, sourced from the real bindings) --- #
 # Each row is (action, key). These match the actual input handling: player

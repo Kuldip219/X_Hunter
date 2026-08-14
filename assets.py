@@ -36,6 +36,7 @@ class Assets:
     quit_gameover_img: pygame.Surface = None
     score_img: pygame.Surface = None
     back_img: pygame.Surface = None
+    controls_img: pygame.Surface = None
 
     @classmethod
     def load(cls) -> "Assets":
@@ -102,6 +103,7 @@ class Assets:
         )
         score_img = _load_menu_banner("Assets/score.png", settings.SCORE_IMG_SIZE, font, "HIGH SCORES")
         back_img = _load_menu_banner("Assets/back.png", settings.BACK_IMG_SIZE, font, "BACK")
+        controls_img = _load_menu_banner("Assets/controls.png", settings.CONTROLS_IMG_SIZE, font, "CONTROLS")
 
         return cls(
             font=font,
@@ -122,6 +124,7 @@ class Assets:
             quit_gameover_img=quit_gameover_img,
             score_img=score_img,
             back_img=back_img,
+            controls_img=controls_img,
         )
 
 
