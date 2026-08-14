@@ -74,8 +74,10 @@ def test_fire_cooldown_gates_rapid_fire(game):
     p.y = 600
     keys = KeyState(pygame.K_SPACE)
     # Frames 0..COOLDOWN-1: only the first shot fires; the cooldown blocks
-    # the rest while Space stays held.
-    for _ in range(settings.PLAYER_FIRE_COOLDOWN):
+    # the rest while Space stays held. The cooldown is seconds-based, so the
+    # test steps at the target FPS (default dt = 1/60 s per frame).
+    cooldown_frames = int(round(settings.PLAYER_FIRE_COOLDOWN_SECONDS * settings.FPS))
+    for _ in range(cooldown_frames):
         game._update_game(keys)
     assert len(game.bullets) == 1
     # The frame the cooldown expires, holding Space fires again.

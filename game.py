@@ -72,11 +72,15 @@ class Game:
 
     def run(self) -> None:
         while self.running:
+            # Delta time in seconds since the previous frame, clamped so a
+            # lag spike / tab switch cannot teleport entities or burst-fire.
+            dt = min(self.clock.tick(settings.FPS) / 1000.0, settings.MAX_FRAME_DT)
+
             self.screen.fill(settings.BLACK)
             mouse_pos = pygame.mouse.get_pos()
 
             self._handle_events(mouse_pos)
-            self._update_and_draw(mouse_pos)
+            self._update_and_draw(mouse_pos, dt)
 
             new_state = self.fade.update()
             if new_state is not None:
@@ -84,17 +88,16 @@ class Game:
             self.fade.draw(self.screen)
 
             pygame.display.update()
-            self.clock.tick(settings.FPS)
 
         pygame.quit()
 
-    def _update_and_draw(self, mouse_pos: tuple[int, int]) -> None:
+    def _update_and_draw(self, mouse_pos: tuple[int, int], dt: float = 1.0 / settings.FPS) -> None:
         if self.state == "menu":
             self.main_menu.draw(self.screen, mouse_pos)
 
         elif self.state == "game":
             keys = pygame.key.get_pressed()
-            self._update_game(keys)
+            self._update_game(keys, dt)
             self._draw_game()
 
         elif self.state == "options":
@@ -192,7 +195,7 @@ class Game:
     # "game" state: update
     # ------------------------------------------------------------------ #
 
-    def _update_game(self, keys: pygame.key.ScancodeWrapper) -> None:
+    def _update_game(self, keys: pygame.key.ScancodeWrapper, dt: float = 1.0 / settings.FPS) -> None:
         # Once the player is dead, gameplay is fully frozen - no input, no
         # collisions, no bullet/enemy movement - until the state machine has
         # actually transitioned away from "game" (the fade-out to "game_over"
@@ -201,9 +204,14 @@ class Game:
         if self.player.dead:
             return
 
-        self.player.update_invulnerability()
-        self.player.update_fire_cooldown()
-        self.player.handle_input(keys)
+        # Clamp defensively (the main loop clamps too): a caller-provided dt
+        # larger than MAX_FRAME_DT must not move things further than a capped
+        # frame would.
+        dt = min(dt, settings.MAX_FRAME_DT)
+
+        self.player.update_invulnerability(dt)
+        self.player.update_fire_cooldown(dt)
+        self.player.handle_input(keys, dt)
         self.player.clamp_to_screen(settings.WIDTH)
 
         # Hold-to-fire: while Space is held, fire once per cooldown window.
@@ -212,7 +220,7 @@ class Game:
         if keys[pygame.K_SPACE] and self.player.can_fire and not self.player.dead:
             self.bullets.append(self.player.spawn_bullet())
             self.audio.play("shoot")
-            self.player.fire_cooldown = settings.PLAYER_FIRE_COOLDOWN
+            self.player.fire_cooldown = settings.PLAYER_FIRE_COOLDOWN_SECONDS
 
         # Difficulty ramp (invisible, smooth): scale enemy speed and the
         # active enemy count off a single blended difficulty value. It runs
@@ -222,8 +230,8 @@ class Game:
         diff = self.difficulty.value(self.score, elapsed)
 
         enemy_speed = min(
-            settings.ENEMY_SPEED + settings.ENEMY_SPEED_GAIN * diff,
-            settings.ENEMY_MAX_SPEED,
+            settings.ENEMY_SPEED_PER_SEC + settings.ENEMY_SPEED_GAIN_PER_SEC * diff,
+            settings.ENEMY_MAX_SPEED_PER_SEC,
         )
         for enemy in self.enemies:
             enemy.speed = enemy_speed
@@ -236,12 +244,12 @@ class Game:
             self.enemies.append(Enemy.spawn_initial(settings.WIDTH))
 
         for bullet in self.bullets[:]:
-            bullet.update()
+            bullet.update(dt)
             if bullet.off_screen:
                 self.bullets.remove(bullet)
 
         for enemy in self.enemies:
-            enemy.update()
+            enemy.update(dt)
 
             if enemy.get_rect().colliderect(self.player.get_rect()):
                 # take_hit() returns False while the i-frame window is active,

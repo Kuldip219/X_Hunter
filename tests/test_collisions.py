@@ -90,10 +90,12 @@ def test_no_damage_during_iframe_window_and_resume_after(game):
     assert p.health == hp - 1
     assert p.invulnerable
 
-    # (b) Keep the enemy clear while the whole window elapses (the timer
-    # ticks down to 0 over PLAYER_INVULNERABLE_DURATION frames).
+    # (b) Keep the enemy clear while the whole window elapses. The window is
+    # seconds-based (1.0 s), so step the target FPS to reach it: 60 frames of
+    # 1/60 s each at the default dt.
     e.x, e.y = -100, -100
-    for _ in range(settings.PLAYER_INVULNERABLE_DURATION):
+    window_frames = int(round(settings.PLAYER_INVULNERABLE_DURATION_SECONDS * settings.FPS))
+    for _ in range(window_frames):
         game._update_game(KeyState())
     assert p.invulnerable_timer == 0  # window fully expired
     assert p.health == hp - 1
