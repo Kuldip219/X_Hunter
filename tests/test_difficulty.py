@@ -62,20 +62,20 @@ def test_enemy_speed_scales_with_difficulty(monkeypatch, game):
     ticks = _freeze_ticks(monkeypatch)
     start_game(game)  # reset_game sets run_start_ticks = 0
 
-    assert game.enemies[0].speed == settings.ENEMY_SPEED  # baseline
+    assert game.enemies[0].speed == settings.ENEMY_SPEED_PER_SEC  # baseline
 
     # Score alone at its saturated value (no time yet) -> halfway ramp.
     game.score = int(settings.DIFFICULTY_SCORE_TO_FULL)
     game._update_game(KeyState())
-    expected = settings.ENEMY_SPEED + settings.ENEMY_SPEED_GAIN * settings.DIFFICULTY_SCORE_WEIGHT
+    expected = settings.ENEMY_SPEED_PER_SEC + settings.ENEMY_SPEED_GAIN_PER_SEC * settings.DIFFICULTY_SCORE_WEIGHT
     assert game.enemies[0].speed == expected
 
     # Time + score both saturated -> full ramp, capped at max speed.
     ticks["t"] = int(settings.DIFFICULTY_TIME_TO_FULL * 1000)
     game.score = int(settings.DIFFICULTY_SCORE_TO_FULL)
     game._update_game(KeyState())
-    assert game.enemies[0].speed == settings.ENEMY_MAX_SPEED
-    assert game.enemies[0].speed <= settings.ENEMY_MAX_SPEED
+    assert game.enemies[0].speed == settings.ENEMY_MAX_SPEED_PER_SEC
+    assert game.enemies[0].speed <= settings.ENEMY_MAX_SPEED_PER_SEC
 
 
 def test_enemy_count_scales_with_difficulty(monkeypatch, game):
@@ -100,8 +100,8 @@ def test_speed_ramps_smoothly_and_stays_capped(monkeypatch, game):
         game._update_game(KeyState())
         speeds.append(game.enemies[0].speed)
     assert speeds == sorted(speeds)  # non-decreasing over the ramp
-    assert speeds[-1] == settings.ENEMY_MAX_SPEED
-    assert all(s <= settings.ENEMY_MAX_SPEED for s in speeds)
+    assert speeds[-1] == settings.ENEMY_MAX_SPEED_PER_SEC
+    assert all(s <= settings.ENEMY_MAX_SPEED_PER_SEC for s in speeds)
 
 
 def test_difficulty_resets_on_restart(monkeypatch, game):
@@ -111,7 +111,7 @@ def test_difficulty_resets_on_restart(monkeypatch, game):
     game.score = int(settings.DIFFICULTY_SCORE_TO_FULL)
     game._update_game(KeyState())
     assert len(game.enemies) == settings.ENEMY_MAX_COUNT
-    assert game.enemies[0].speed == settings.ENEMY_MAX_SPEED
+    assert game.enemies[0].speed == settings.ENEMY_MAX_SPEED_PER_SEC
 
     # Restart (e.g. a new run): score resets and the clock restarts, so the
     # next frame is back at baseline - no carryover from the previous run.
@@ -119,7 +119,7 @@ def test_difficulty_resets_on_restart(monkeypatch, game):
     assert game.score == 0
     game._update_game(KeyState())
     assert len(game.enemies) == settings.INITIAL_ENEMY_COUNT
-    assert game.enemies[0].speed == settings.ENEMY_SPEED
+    assert game.enemies[0].speed == settings.ENEMY_SPEED_PER_SEC
 
 
 def test_difficulty_frozen_while_dead(monkeypatch, game):
@@ -134,5 +134,5 @@ def test_difficulty_frozen_while_dead(monkeypatch, game):
     ticks["t"] = int(settings.DIFFICULTY_TIME_TO_FULL * 1000)
     game.score = int(settings.DIFFICULTY_SCORE_TO_FULL)
     game._update_game(KeyState())  # early-return: no difficulty scaling
-    assert game.enemies[0].speed == settings.ENEMY_SPEED
+    assert game.enemies[0].speed == settings.ENEMY_SPEED_PER_SEC
     assert len(game.enemies) == settings.INITIAL_ENEMY_COUNT

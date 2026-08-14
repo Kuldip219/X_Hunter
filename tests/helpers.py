@@ -47,8 +47,8 @@ def start_game(game) -> None:
 
 def place_enemy_over_player(game, dx: int = 10, dy: int = 5) -> "Enemy":
     """Replace the enemy list with a single enemy overlapping the player's
-    sprite. The +5 dy accounts for enemy.update() moving it down 5px before
-    the collision check runs."""
+    sprite. The +5 dy accounts for enemy.update() moving it down 5px (300 px/s
+    * the default 1/60 s dt) before the collision check runs."""
     from enemy import Enemy
 
     p = game.player

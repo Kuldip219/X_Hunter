@@ -8,13 +8,14 @@ import settings
 
 
 class Bullet:
-    def __init__(self, x: float, y: float, speed: int = settings.BULLET_SPEED) -> None:
+    def __init__(self, x: float, y: float, speed: float = settings.BULLET_SPEED_PER_SEC) -> None:
         self.x = x
         self.y = y
+        # Speed is in px/second; per-frame displacement = speed * dt.
         self.speed = speed
 
-    def update(self) -> None:
-        self.y -= self.speed
+    def update(self, dt: float) -> None:
+        self.y -= self.speed * dt
 
     @property
     def off_screen(self) -> bool:

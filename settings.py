@@ -16,28 +16,41 @@ FONT_PATH: str = "Fonts/pixeltype.ttf"
 FONT_SIZE_SMALL: int = 36
 FONT_SIZE_LARGE: int = 72
 
+# --- Delta time --- #
+# Movement and gameplay timers are expressed in real time (seconds) and
+# scaled by the per-frame delta time, so game speed is independent of the
+# actual frame rate. MAX_FRAME_DT clamps a single frame's dt after a lag
+# spike, tab switch, or breakpoint pause so a huge dt cannot teleport
+# entities or burst-fire a wall of bullets: 0.05 s = 3 frames at 60 FPS,
+# but also a full frame at 20 FPS - it caps the worst-case jump while
+# still letting low frame rates run smoothly.
+MAX_FRAME_DT: float = 0.05
+
 # --- Player --- #
 # Collision rect dimensions. These must match PLAYER_IMG_SIZE so the hitbox
 # coincides exactly with the rendered sprite (both drawn from the top-left
 # corner (x, y)).
 PLAYER_WIDTH: int = 65
 PLAYER_HEIGHT: int = 80
-PLAYER_SPEED: int = 5
+# 5 px/frame at 60 FPS = 300 px/s (feel unchanged at the target frame rate).
+PLAYER_SPEED_PER_SEC: int = 300
 PLAYER_START_HEALTH: int = 5
 PLAYER_IMG_SIZE: tuple[int, int] = (65, 80)
 
-# Fire cooldown: frames between shots while Space is held (12 = 5 shots/s
-# at 60 FPS - classic arcade cadence, not a machine gun).
-PLAYER_FIRE_COOLDOWN: int = 12
+# Fire cooldown between shots while Space is held: 0.2 s = 12 frames at
+# 60 FPS = 5 shots/s - classic arcade cadence, not a machine gun.
+PLAYER_FIRE_COOLDOWN_SECONDS: float = 0.2
 
 # --- Invulnerability (i-frames) --- #
-# After taking a hit the player is immune for this many frames (~1 s at 60 FPS)
-# and blinks every PLAYER_BLINK_INTERVAL frames to show they are safe.
-PLAYER_INVULNERABLE_DURATION: int = 60
-PLAYER_BLINK_INTERVAL: int = 6
+# After taking a hit the player is immune for this long (1.0 s = 60 frames
+# at 60 FPS) and blinks every PLAYER_BLINK_INTERVAL_SECONDS to show they
+# are safe. Both are real time, not frame counts.
+PLAYER_INVULNERABLE_DURATION_SECONDS: float = 1.0
+PLAYER_BLINK_INTERVAL_SECONDS: float = 0.1
 
 # --- Bullet --- #
-BULLET_SPEED: int = 10
+# 10 px/frame at 60 FPS = 600 px/s.
+BULLET_SPEED_PER_SEC: int = 600
 BULLET_IMG_SIZE: tuple[int, int] = (10, 20)
 BULLET_OFFSCREEN_Y: int = -20
 
@@ -47,7 +60,8 @@ BULLET_OFFSCREEN_Y: int = -20
 # corner (x, y)).
 ENEMY_WIDTH: int = 50
 ENEMY_HEIGHT: int = 50
-ENEMY_SPEED: int = 5
+# 5 px/frame at 60 FPS = 300 px/s.
+ENEMY_SPEED_PER_SEC: int = 300
 ENEMY_IMG_SIZE: tuple[int, int] = (50, 50)
 
 # --- Difficulty ramp --- #
@@ -65,10 +79,12 @@ DIFFICULTY_TIME_TO_FULL: float = 180.0  # seconds of survival to saturate the ti
 DIFFICULTY_SCORE_TO_FULL: float = 50.0  # score to saturate the score term
 DIFFICULTY_MAX: float = 1.0
 
-# Enemy speed scales as: min(ENEMY_SPEED + ENEMY_SPEED_GAIN*difficulty, ENEMY_MAX_SPEED)
-# At max difficulty: 5 + 4 = 9 px/frame (540 px/s) - faster but still reactable.
-ENEMY_SPEED_GAIN: int = 4
-ENEMY_MAX_SPEED: int = 9
+# Enemy speed scales as:
+#   min(ENEMY_SPEED_PER_SEC + ENEMY_SPEED_GAIN_PER_SEC*difficulty, ENEMY_MAX_SPEED_PER_SEC)
+# At max difficulty: 300 + 240 = 540 px/s (9 px/frame at 60 FPS) - faster
+# but still reactable.
+ENEMY_SPEED_GAIN_PER_SEC: int = 240
+ENEMY_MAX_SPEED_PER_SEC: int = 540
 
 # Active enemy count scales as: min(INITIAL_ENEMY_COUNT + ENEMY_COUNT_GAIN*difficulty, ENEMY_MAX_COUNT)
 # At max difficulty the field doubles from 5 to 10 enemies.

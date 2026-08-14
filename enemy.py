@@ -16,12 +16,13 @@ class Enemy:
         y: float,
         width: int = settings.ENEMY_WIDTH,
         height: int = settings.ENEMY_HEIGHT,
-        speed: int = settings.ENEMY_SPEED,
+        speed: float = settings.ENEMY_SPEED_PER_SEC,
     ) -> None:
         self.x = x
         self.y = y
         self.width = width
         self.height = height
+        # Speed is in px/second; per-frame displacement = speed * dt.
         self.speed = speed
 
     @classmethod
@@ -42,8 +43,8 @@ class Enemy:
         self.y = random.randint(settings.RESPAWN_ENEMY_MIN_Y, settings.RESPAWN_ENEMY_MAX_Y)
         self.x = random.randint(0, screen_width - self.width)
 
-    def update(self) -> None:
-        self.y += self.speed
+    def update(self, dt: float) -> None:
+        self.y += self.speed * dt
 
     def is_off_screen(self, screen_height: int) -> bool:
         return self.y > screen_height

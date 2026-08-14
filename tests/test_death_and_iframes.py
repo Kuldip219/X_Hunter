@@ -126,7 +126,8 @@ def test_lethal_hit_bypasses_active_iframes(game):
     start_game(game)
     p = game.player
     p.health = 1
-    p.invulnerable_timer = settings.PLAYER_INVULNERABLE_DURATION // 2
+    # Mid-way through the (seconds-based) i-frame window.
+    p.invulnerable_timer = settings.PLAYER_INVULNERABLE_DURATION_SECONDS / 2
     assert p.invulnerable
 
     result = p.take_hit()

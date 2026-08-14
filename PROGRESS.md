@@ -1,170 +1,169 @@
-# 🕹 X Hunter — Work Audit & Progress Log
+# X Hunter — Project Audit & Work Log
 
-> **What this file is:** a complete record of every change made to the
-> project during the AI-assisted collaboration: the original audit, all
-> bug fixes, the test suite, dependency/repo hygiene work, and the
-> current state of the repository. Generated: Aug 13, 2026.
-
----
+Status: **54 tests passing** · last updated August 14, 2026.
 
 ## 1. Project snapshot
 
-| | |
-|---|---|
-| **Game** | X Hunter — 2D arcade space shooter |
-| **Language / runtime** | Python 3.12, **pygame 2.6.1** |
-| **Packaging** | PyInstaller (`X Hunter.spec`) → Windows `.exe`, zipped in `dist/` |
-| **Entry point** | `main.py` (`Game().run()`) |
-| **Architecture** | `game.py` (state machine + main loop), `player.py`, `enemy.py`, `bullet.py`, `explosion.py`, `ui.py` (effects/HUD), `menus.py`, `assets.py`, `settings.py` (all constants), `resource_path.py` |
-| **Source size** | 11 modules, ~980 lines |
-| **Test suite** | 22 pytest tests, ~505 lines (`tests/`) |
+- **Stack:** Python 3.12 + pygame 2.6.1 (SDL 2.28.4); PyInstaller for the Windows build.
+- **Architecture:** a single `Game` class (`game.py`) owns state and runs the main loop;
+  entities are plain classes (`player.py`, `enemy.py`, `bullet.py`, `explosion.py`);
+  `menus.py`/`ui.py` handle UI and screen effects; `assets.py` loads sprites/fonts;
+  `settings.py` holds every constant; `audio.py` wraps the mixer; `difficulty.py`
+  computes the invisible difficulty ramp.
+- **State machine:** `menu → game ⇄ pause → game_over → (restart)`, transitions driven
+  by a `FadeTransition` (fade-out completes → state switches → fade-in).
+- **Code size:** ~1,360 source lines across the root modules; 71 tracked files
+  (all source/assets/tests — build artifacts are untracked and ignored).
+- **Entry point:** `python main.py` (headless-safe: `SDL_VIDEODRIVER=dummy`).
 
-State machine: `menu → game ⇄ pause → game_over → menu`, transitions driven
-by a fade-to-black (`ui.FadeTransition`), ~17 frames per fade-out.
+## 2. Original findings (first audit, `AUDIT.md`)
 
----
+| ID | Finding |
+|----|---------|
+| **H1** | Death-revival bug: during the game-over fade-out the player could move/fire/re-collide, re-triggering the death animation and delaying game over. |
+| **H2** | No invulnerability window: overlapping enemies drained HP every frame, multiple enemies cost multiple HP in one frame. |
+| **H3** | Hitboxes smaller than sprites: bullets visually passed through enemy edges; a bullet landing exactly on an edge was missed (point-based collision). |
+| — | Repo hygiene: 201 build/dist/`__pycache__` artifacts committed; `.gitignore` broken (over-broad `*.md`/`*.txt`/`*.log` rules hid real files). |
+| — | No test framework; every change was verified with throwaway headless smoke scripts. |
 
-## 2. Original audit (initial findings)
+## 3. Work completed (chronological)
 
-The first audit (originally `AUDIT.md`) reviewed the freshly handed-over
-project and found, in priority order:
+### 3.1 H1 — death-freeze fix (`f54a4a3`)
+`_update_game()` now early-returns while the player is dead, so input, firing, and
+collisions stay frozen until the state machine leaves `"game"`. The player never
+flips back to alive during the fade-out.
 
-1. **🔴 H1 — Death revival bug.** `_draw_game()` set `player.dead = False`
-   as soon as the death explosion finished, but the state stayed `"game"`
-   for the ~17-frame fade-out. During that window the player could move,
-   fire, and be hit again — re-triggering the death animation and delaying
-   game over.
-2. **🔴 H2 — No invulnerability.** Every overlapping enemy dealt 1 damage
-   per frame; several enemies could drain all 5 HP in one screenful.
-3. **🔴 H3 — Hitboxes didn't match sprites.** Player 65×80 sprite vs 50×50
-   rect, enemy 50×50 vs 40×40, bullet collisions were a single point —
-   bullets visibly passed through sprite edges.
-4. **🟠 Repo hygiene.** 201 of 252 tracked files were `build/`, `dist/`,
-   and `__pycache__` artifacts; `.gitignore` rules were missing/broken.
-5. **🟠 No tests, no `requirements.txt`** — changes were unverifiable and
-   the environment was not reproducible.
-6. **🟡 Polish gaps** — placeholder options screen, no audio, no
-   high-score persistence, no difficulty ramp, tap-only shooting,
-   frame-rate-dependent movement.
+### 3.2 H3 — hitbox alignment (`b2668a7`)
+Collision rects resized to match the rendered sprites, all drawn from the same
+top-left origin (no drift):
 
----
-
-## 3. Work completed
-
-### 3.1 H1 — Death-freeze fix ✅
-**Bug:** player revived mid fade-out; death animation re-triggered.
-**Fix:** `_update_game()` now early-returns while the player is dead
-(input, collisions, bullets, enemies all frozen). `_draw_game()` starts
-the fade to `game_over` exactly once (guarded by `not fade.fading_out`)
-and never flips `dead` back to `False`. ESC/Space are gated on
-`not self.player.dead`.
-**Files:** `game.py`, `player.py`, `settings.py`.
-**Verified:** headless smoke test — player immovable/unable-to-fire/
-unhittable during the entire fade; state always reaches `game_over`.
-
-### 3.2 H2 — Invulnerability window (i-frames) ✅
-**Bug:** overlapping enemies drained multiple HP per frame.
-**Fix:** `Player.take_hit()` returns a bool, starts a 60-frame i-frame
-timer after a successful non-lethal hit, and the player blinks every 6
-frames while invulnerable. Hit effects (shake/flash/knockback) fire only
-when damage actually applies. The initial implementation still refused a
-lethal hit during i-frames (see 3.7).
-**Files:** `settings.py` (`PLAYER_INVULNERABLE_DURATION = 60`,
-`PLAYER_BLINK_INTERVAL = 6`), `player.py`, `game.py`.
-**Verified:** headless smoke test — single damage per overlap, no damage
-during window, damage resumes after expiry, death unaffected.
-
-### 3.3 H3 — Hitbox/sprite alignment ✅
-**Bug:** collision rects smaller than rendered sprites.
-**Fix:** collision rects now equal the sprite dimensions and share the
-same top-left origin (no visual drift):
-
-| Entity | Rect before | Rect after | Sprite |
-|---|---|---|---|
+| Entity | Collision rect before | After | Sprite |
+|--------|----------------------|-------|--------|
 | Player | 50×50 | **65×80** | 65×80 |
 | Enemy | 40×40 | **50×50** | 50×50 |
-| Bullet | point `(x, y)` | **10×20 `Rect`** | 10×20 |
+| Bullet | single point | **10×20 `pygame.Rect`** | 10×20 |
 
-`Enemy.contains_point()` (strict `>`/`<` checks) removed in favour of
-`Rect.colliderect()`; edge-overlapping bullets now hit (the old L1 miss).
-Unavoidable side effects: player clamp max X 550→535, enemy respawn range
-0–550, bullet spawn now centered on the sprite.
-**Files:** `settings.py`, `bullet.py`, `enemy.py`, `game.py`.
-**Verified:** 17-check edge-collision smoke test + full re-run of the
-death/i-frame suite.
+Bullet–enemy collision switched from `Enemy.contains_point` (strict `>`/`<`) to
+`Rect.colliderect`, fixing the edge-overlap miss (L1).
 
-### 3.4 Test suite (22 tests) ✅
-Set up a real, repeatable pytest suite (no more throwaway scripts):
-- **`tests/conftest.py`** — forces `SDL_VIDEODRIVER/SDL_AUDIODRIVER=dummy`
-  before pygame imports (headless), pins project root, `game` fixture.
-- **`tests/helpers.py`** — `KeyState`, frame pumping, state-entry helpers.
-- **`test_state_flow.py` (3)** — menu → play → game_over → restart.
-- **`test_player.py` (5)** — clamping at both edges, held-key movement.
-- **`test_collisions.py` (5)** — bullet–enemy score/respawn/explosion,
-  edge-overlap hits, player–enemy damage once per i-frame window.
-- **`test_death_and_iframes.py` (4)** — H1 death-freeze regression guard,
-  H2 killing-blow edge case, no i-frames on death.
-- **`test_hitboxes.py` (5)** — rect dimensions vs sprite constants/images.
+### 3.3 Test suite (`bd7f013`)
+`pytest` + `tests/` with `conftest.py` forcing dummy SDL drivers and a fresh `Game`
+fixture. 22 tests covering state flow, movement clamping, bullet/enemy and
+player/enemy collisions, the i-frame window, the death sequence (H1), the
+killing-blow edge case (H2), and hitbox dimensions (H3).
 
-**Files:** `tests/` (7 files), `pytest.ini`.
-**Verified:** `pytest` runs standalone from the project root; confirmed in
-a fresh virtualenv.
+### 3.4 Dependencies + README (`585d619`)
+`requirements.txt` (runtime: `pygame==2.6.1`), `requirements-dev.txt`
+(`-r requirements.txt` + `pytest==9.1.1`), and a README Setup section.
 
-### 3.5 Dependency manifests + README ✅
-- `requirements.txt` → `pygame==2.6.1` (runtime).
-- `requirements-dev.txt` → `-r requirements.txt` + `pytest==9.1.1` (dev).
-- `Readme.md` — added a "Setup (run from source)" section
-  (`pip install -r requirements-dev.txt` → `python main.py` / `pytest`).
-**Verified:** fresh virtualenv install from the files followed by
-`pytest` succeeds (22 tests run).
+### 3.5 Repo hygiene (`0bc6a69`)
+Clean `.gitignore` (`__pycache__/`, `*.pyc`, `build/`, `dist/`, `.freebuff/`,
+`venv/`, `.venv/`, `.pytest_cache/`); 201 build/dist/bytecode artifacts untracked
+via `git rm --cached` (kept on disk — the built `dist/X Hunter.zip` survives).
+Tracked files: **261 → 62**.
 
-### 3.6 Repo hygiene ✅
-- **Tracked files: 261 → 62.** Untracked 201 build artifacts (175 `dist/`,
-  16 `build/`, 10 `__pycache__/`) plus the stray
-  `.freebuff/smoke_test_hitboxes.py` via `git rm --cached` — index only,
-  **nothing deleted from disk** (`dist/X Hunter.zip`, 31 MB, still present).
-- **`.gitignore` rewritten cleanly:** `__pycache__/`, `*.pyc`, `build/`,
-  `dist/`, `.freebuff/`, `venv/`, `.venv/`, `.pytest_cache/`.
-  (Replaced an accumulated mess of duplicate rules and blanket
-  `*.md`/`*.txt` ignores.)
-- **History untouched** — no squashing/rewriting (the initial commit still
-  contains the artifacts; purging it is a deliberate decision left to the
-  project head).
-- **Commits:** `0bc6a69` (.gitignore + untrack artifacts),
-  `585d619` (dependency manifests + README + audit).
+### 3.6 H2 completion — lethal hits bypass i-frames (`9584b3a`)
+`Player.take_hit()` reordered to **dead-guard → lethal check → invulnerability
+check**: a hit that would bring HP to 0 always applies and kills, even mid-window;
+only non-lethal hits are blocked during i-frames. Found by the test suite (one
+failing test surfaced the bug; fixed only after approval).
 
-### 3.7 H2 completion — killing blow bypasses i-frames ✅
-**Bug found by the test suite:** `take_hit()` checked
-`if self.invulnerable: return False` *before* lethality, so a lethal hit
-during i-frames was refused — reachable in real play (a 2→1 HP hit starts
-the window; a touch during the blink should kill but didn't).
-**Fix (uncommitted, in `player.py`):** order is now `dead-guard → lethal
-check → invulnerability check`. A hit bringing HP to ≤0 always applies and
-triggers death; i-frames only block non-lethal damage. A dead player can
-no longer be re-hit even by a direct `take_hit()` call.
-**Verified:** full suite **22/22 passing** + end-to-end game-loop
-reproduction (2 HP → hit to 1 HP blinking → lethal touch → death).
+### 3.7 Audit docs (`809898c`)
+`AUDIT.md` (original findings) and `PROGRESS.md` (this document).
 
-### 3.8 Live preview pipeline (dev infra, untracked) 
-- `.freebuff/preview_live.py` — runs the *real* `Game` headless with an
-  autopilot (menu click → play → shoot → die → restart loop), streaming
-  PNG frames.
-- `.freebuff/preview/frame.html` — auto-refreshing frame viewer.
-- `python -m http.server` on **port 8123** (no project default exists for
-  a pygame app).
-- `.freebuff/run.md` — reproduction/run doc for future threads.
-- URL: `http://127.0.0.1:8123/frame.html`
-- Pitfalls solved along the way: pygame `image.save()` writes TGA unless
-  the temp filename ends in `.png`; repeated menu clicks reset the fade
-  and lock the game on the menu (gate on `fade_idle`); Windows file-lock
-  collisions during frame writes; the app kills the registered server pid
-  at session teardown while the capture survives (re-register each turn).
+### 3.8 Audio (`c55870e`) — 33 tests
+- **Assets** (`Assets/audio/`, all CC0): 6 Kenney.nl SFX (shoot, hit, explosion,
+  player death, menu hover, menu click) + an original public-domain 14.55 s
+  chiptune loop (`gameplay_music.wav`, generated by
+  `Assets/audio/generate_gameplay_music.py`). Attribution in `SOURCES.md` +
+  `LICENSE-kenney-CC0.txt`.
+- **`audio.py` `AudioManager`**: mixer/SFX/music loading, all wrapped in
+  try/except — audio failure degrades to silent no-ops, never crashes.
+- Wired: shoot (fire), hit (non-lethal), explosion (enemy destroyed), player
+  death + music fade, menu hover/click; music plays on `game`, pauses on `pause`,
+  stops on `menu`/`game_over`.
+- **Mute:** `M` toggles all audio globally; a small "MUTED" label shows top-right.
 
----
+### 3.9 Hold-to-fire (`4fbdd5e`) — 37 tests
+`PLAYER_FIRE_COOLDOWN = 12` frames (5 shots/s). Firing moved from KEYDOWN-only
+into `_update_game`: Space held + cooldown expired → fire. H1 gating intact
+(firing blocked while dead, enforced at the update-loop level).
 
-## 4. Current repository state
+### 3.10 Difficulty ramp (`6c92ca9`) — 47 tests
+`difficulty.py`: `difficulty = min(0.5·min(t/180,1) + 0.5·min(score/50,1), 1.0)`.
+Both survival time and score matter (each alone reaches only its weighted share);
+capped at 1.0. Enemy speed scales `5 + 4·d` capped at 9 px/frame; enemy count
+scales `5 + 5·d` capped at 10. Invisible (no UI). Resets to baseline on restart;
+frozen while dead (H1).
+
+### 3.11 Delta-time movement (uncommitted) — **54 tests** (details in §4)
+
+## 4. Delta-time conversion (latest work)
+
+### 4.1 The problem
+All movement was px/frame, implicitly assuming a fixed frame rate — any frame
+drop or hardware variance changed actual game speed.
+
+### 4.2 dt plumbing
+`Game.run()` computes `dt = clock.tick(FPS)/1000.0` each frame and passes it down:
+`_update_and_draw(mouse_pos, dt)` → `_update_game(keys, dt)` →
+`Player.handle_input/dat updates`, `Enemy.update(dt)`, `Bullet.update(dt)`.
+Update methods default to `dt = 1/FPS`, so test callers and the preview autopilot
+get exactly the old per-frame behavior.
+
+**Clamp: `MAX_FRAME_DT = 0.05` s** — 3 frames at 60 FPS, but also a full frame at
+20 FPS. Caps the worst-case jump after a lag spike/tab switch/breakpoint pause
+(no teleporting, no bullet bursts) without throttling low frame rates. Applied in
+`run()` and defensively inside `_update_game()`.
+
+### 4.3 Constants converted (old px/frame → new px/s)
+
+| Constant | Old | New |
+|----------|-----|-----|
+| `PLAYER_SPEED` → `PLAYER_SPEED_PER_SEC` | 5 | 300 |
+| `ENEMY_SPEED` → `ENEMY_SPEED_PER_SEC` | 5 | 300 |
+| `ENEMY_SPEED_GAIN` → `ENEMY_SPEED_GAIN_PER_SEC` | 4 | 240 |
+| `ENEMY_MAX_SPEED` → `ENEMY_MAX_SPEED_PER_SEC` | 9 | 540 |
+| `BULLET_SPEED` → `BULLET_SPEED_PER_SEC` | 10 | 600 |
+
+All are `old × 60`, so gameplay feel at the target FPS is unchanged (verified by
+a regression test: one `Enemy.update(1/60)` still lands at exactly `y == 5`).
+
+### 4.4 Timers checked
+- **Hold-to-fire cooldown** — was frame-counted → `PLAYER_FIRE_COOLDOWN_SECONDS = 0.2`
+  (still 5 shots/s; dt-accumulated).
+- **i-frames** — was frame-counted (60) → `PLAYER_INVULNERABLE_DURATION_SECONDS = 1.0`;
+  blink interval → `PLAYER_BLINK_INTERVAL_SECONDS = 0.1`. Converted for the same
+  frame-rate independence; tested behavior at 60 FPS preserved exactly.
+- **Difficulty clock** — already real-time (`get_ticks()`); untouched.
+- **Spawn logic** — no spawn-interval timers exist (respawns are instant);
+  nothing to convert.
+- **Left frame-based deliberately:** explosion animation frame delays and the
+  `FadeTransition` — visual animation / the H1 mechanism itself.
+- **Float hygiene:** timers snap residuals ≤1e-9 s to exactly 0.0, so windows and
+  cooldowns expire at precisely the same frame as before at any frame rate.
+
+### 4.5 Verified behavior preserved
+H1 death-freeze gating, i-frames, and hitbox logic unchanged — only displacement
+scaling changed. All 47 prior tests pass unmodified in behavior (constant-name
+updates only).
+
+### 4.6 Delta-time tests (`tests/test_delta_time.py`, 7 new)
+- Player/enemy/bullet cover the same distance per simulated second at 30 vs 60 fps.
+- dt clamp caps movement after a 1 s spike (single + repeated).
+- px/s constants == old px/frame × FPS; one 60 FPS frame reproduces old motion
+  (5/5/10 px) exactly.
+- Fire cadence: 5 shots per held second at both 30 and 60 fps (no burst-fire).
+- i-frame window expires on real time across mixed frame rates.
+
+## 5. Current repo state
 
 ```
+6c92ca9 Add difficulty ramp and integrate into game
+4fbdd5e Implement hold-to-fire with cooldown
+c55870e Add audio manager and integrate SFX/music
+809898c Add progress and work audit document
+9584b3a fix: lethal hits now bypass i-frames instead of being refused
 585d619 Add dependency manifests, README setup instructions, and project audit
 0bc6a69 Add .gitignore and stop tracking build artifacts
 bd7f013 Add pytest config and game test suite
@@ -174,36 +173,24 @@ d6c3b9f Reorganize download and built with sections in README
 a9e5b5b Initial commit
 ```
 
-- **Tracked files:** 62 (11 source modules, 7 test files, 28 assets,
-  4 fonts, 3 screenshots, config/docs).
-- **Uncommitted changes:**
-  - `player.py` — the 3.7 lethal-first `take_hit()` fix (ready to commit).
-  - `AUDIT.md` — **deleted from the working tree** (not staged; status
-    shows `D`). If that deletion was unintended, restore with
-    `git checkout -- AUDIT.md`.
-- **Test suite:** 22/22 passing in ~2.4 s, headless.
-- **On disk but untracked (by design):** `build/` (15 MB), `dist/`
-  (100 MB, includes `X Hunter.zip`), `__pycache__/`, `.freebuff/`,
-  `.pytest_cache/`.
+- **Tracked files:** 71 (all source/assets/tests).
+- **Tests:** 54 passing, 1 warning (the intentional mixer-failure test) in ~5.4 s.
+- **Uncommitted:** the delta-time conversion (`settings.py`, `player.py`,
+  `enemy.py`, `bullet.py`, `game.py`, 5 updated test files, new
+  `tests/test_delta_time.py`). Also note: `AUDIT.md` and `PROGRESS.md` were
+  deleted in the working tree outside this work (this file restores `PROGRESS.md`).
+- **Live preview:** registered at `http://127.0.0.1:8123/frame.html` (headless
+  autopilot streaming real game frames; see `.freebuff/run.md`).
 
----
+## 6. Still open / suggested next steps
 
-## 5. Known issues & suggested next steps
-
-Already fixed: H1 (death revival), H2 (i-frames + killing blow), H3
-(hitboxes), repo hygiene, test coverage, dependency pinning.
-
-Still open (original polish list, untouched by design):
-- **No audio** — zero sound effects or music.
-- **Options screen is a placeholder** ("It's under construction").
-- **No high-score persistence** — score resets on restart.
-- **No difficulty ramp** — enemy speed/count are constant.
-- **Tap-only shooting** — Space must be re-pressed; no hold-to-fire.
-- **Frame-rate-dependent movement** — no fixed timestep; speeds assume
-  60 FPS.
-- **History contains 201 artifact files** in the initial commit — purging
-  via squash/filter-branch is a deliberate, separate decision.
-
----
-
-*Generated as part of the AI-assisted maintenance of X Hunter.*
+- **Fixed-timestep loop:** an accumulator so simulation runs at constant 60 Hz
+  regardless of display frame rate (natural follow-up to the dt work).
+- **FPS counter** in the HUD to verify dt behavior by eye.
+- **Options screen** (volume control, difficulty tuning) — audio mute is global only.
+- **High scores** persistence; **audio for the menu** (calmer loop, nice-to-have).
+- **Difficulty clock includes pause time** — excluding paused time is a possible tweak.
+- **Hold-to-fire cadence tuning** (`PLAYER_FIRE_COOLDOWN_SECONDS` is a single constant).
+- **Artifact history purge** (rewriting the initial commit to drop build/dist) —
+  deliberately deferred; a separate, higher-risk decision.
+- **Commit the delta-time changes** (currently uncommitted).
