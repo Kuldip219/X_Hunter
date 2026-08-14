@@ -26,6 +26,15 @@ FONT_SIZE_LARGE: int = 72
 # still letting low frame rates run smoothly.
 MAX_FRAME_DT: float = 0.05
 
+# Fixed simulation timestep: the gameplay simulation always advances in
+# constant FIXED_DT steps (60 Hz), decoupled from the render rate. Real
+# elapsed time (capped by MAX_FRAME_DT per rendered frame) is banked into
+# an accumulator in Game.run(); each full FIXED_DT runs one _update_game
+# step, so a rendered frame can run 0, 1, or several simulation steps
+# depending on how far behind real time the render loop is. This keeps
+# collision checks and timers on constant-size steps at any frame rate.
+FIXED_DT: float = 1.0 / 60.0
+
 # --- Player --- #
 # Collision rect dimensions. These must match PLAYER_IMG_SIZE so the hitbox
 # coincides exactly with the rendered sprite (both drawn from the top-left
