@@ -251,6 +251,9 @@ class Game:
                 self.audio.play("menu_click")
             if action == "high_scores":
                 self.fade.start("high_scores")
+            elif action == "back":
+                # Same transition as the ESC-from-options path.
+                self.fade.start("menu")
 
         elif self.state == "pause":
             action = self.pause_menu.handle_click(mouse_pos)

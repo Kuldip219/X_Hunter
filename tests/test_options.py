@@ -209,3 +209,20 @@ def test_esc_from_options_returns_to_menu(game):
     game._handle_keydown(pygame.K_ESCAPE)
     pump_fade(game)
     assert game.state == "menu"
+
+
+def test_back_button_returns_to_menu(game):
+    os_ = _enter_options(game)
+    game._handle_mouse_click(os_.back_rect.center)
+    assert game.fade.next_state == "menu"
+    pump_fade(game)
+    assert game.state == "menu"
+
+
+def test_back_button_uses_same_transition_as_esc(game):
+    os_ = _enter_options(game)
+    game._handle_mouse_click(os_.back_rect.center)
+    # Identical fade-out to the ESC path: same target state, same mechanism.
+    assert game.fade.fading_out
+    assert game.fade.next_state == "menu"
+    assert game.state == "options"  # switch happens only when the fade completes

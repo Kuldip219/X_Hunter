@@ -242,6 +242,16 @@ mute (M) stays independent of the slider values (unmuting restores exactly
 where they were). `game.py` gained MOUSEMOTION/MOUSEBUTTONUP handling for
 slider drags in the options state.
 
+### 3.17 Options BACK button (uncommitted) — **112 tests**
+
+Added the shared `back.png` banner (same `_load_menu_banner` helper the
+high-scores screen already uses) to the Options screen at center y=765, below
+the HIGH SCORES banner (moved 700→680 to make room); the now-redundant
+"Press ESC to go back" hint text was removed (the high-scores screen has no
+such hint either). Clicking BACK triggers exactly the same fade to the main
+menu as ESC — additive, ESC unchanged, and BACK is hover-SFX tracked like the
+other buttons.
+
 ## 5. Current repo state
 
 ```
@@ -263,7 +273,7 @@ a9e5b5b Initial commit
 ```
 
 - **Tracked files:** 72 (all source/assets/tests; +1 for `settings_store.py`).
-- **Tests:** 110 passing, 1 warning (the intentional mixer-failure test) in ~11 s.
+- **Tests:** 112 passing, 1 warning (the intentional mixer-failure test) in ~12 s.
 - **Uncommitted:** the delta-time conversion, fixed-timestep accumulator, the
   high-score leaderboard, the Options-screen navigation change, and the new
   Options volume/controls screen (`settings.py`, `player.py`, `enemy.py`,
