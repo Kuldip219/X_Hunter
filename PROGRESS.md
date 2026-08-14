@@ -267,6 +267,21 @@ Back/Restart) with per-cell action/key anchor columns
 (`OPTIONS_GRID_X`). Pure repositioning — no element, font, asset, or logic
 changed; all 112 tests pass unmodified (none hardcode coordinates).
 
+### 3.19 Dedicated controls screen + three-button Options (uncommitted) — **123 tests**
+
+Moved the keybind reference off Options onto a new `controls` state
+(following the high_scores pattern: FadeTransition, reachable only via
+Options, BACK/ESC return to Options). The ControlsScreen now has a full
+screen, so the list went back to one binding per row with generous
+`CONTROLS_ROW_GAP = 60` spacing (`CONTROLS_ACTION_X`/`CONTROLS_KEY_X`
+anchors), same source-of-truth `settings.CONTROLS`. The Options bottom
+became three evenly-spaced image buttons — HIGH SCORES (score.png),
+CONTROLS (controls.png, new 1168×273 asset loaded via the same
+`_load_menu_banner` helper with font fallback), BACK (back.png) — each
+`OPTIONS_ITEM_GAP = 24` apart (equal gaps), sitting in the space the
+controls list vacated. Slider logic, persistence, and high_scores logic
+untouched.
+
 ## 5. Current repo state
 
 ```
@@ -288,7 +303,7 @@ a9e5b5b Initial commit
 ```
 
 - **Tracked files:** 72 (all source/assets/tests; +1 for `settings_store.py`).
-- **Tests:** 112 passing, 1 warning (the intentional mixer-failure test) in ~12 s.
+- **Tests:** 123 passing, 1 warning (the intentional mixer-failure test) in ~13 s.
 - **Uncommitted:** the delta-time conversion, fixed-timestep accumulator, the
   high-score leaderboard, the Options-screen navigation change, and the new
   Options volume/controls screen (`settings.py`, `player.py`, `enemy.py`,

@@ -13,7 +13,7 @@ from difficulty import Difficulty
 from enemy import Enemy
 from explosion import Explosion
 from highscores import HighScoreTable
-from menus import GameOverMenu, HighScoresMenu, MainMenu, OptionsScreen, PauseMenu
+from menus import ControlsScreen, GameOverMenu, HighScoresMenu, MainMenu, OptionsScreen, PauseMenu
 from player import Player
 from settings_store import UserSettings
 
@@ -50,6 +50,9 @@ class Game:
         )
         self.high_scores_menu = HighScoresMenu(
             self.assets, settings.WIDTH, settings.HEIGHT, table=self.high_scores, audio=self.audio
+        )
+        self.controls_screen = ControlsScreen(
+            self.assets, settings.WIDTH, settings.HEIGHT, audio=self.audio
         )
 
         self.screen_shake = ui.ScreenShake()
@@ -170,6 +173,9 @@ class Game:
         elif self.state == "high_scores":
             self.high_scores_menu.draw(self.screen, mouse_pos, self.last_run_rank)
 
+        elif self.state == "controls":
+            self.controls_screen.draw(self.screen, mouse_pos)
+
         # Global (non-intrusive) indication that all audio is muted.
         if self.audio.muted:
             self._draw_mute_indicator()
@@ -196,7 +202,7 @@ class Game:
             self.audio.play_music()
         elif new_state == "pause":
             self.audio.pause_music()
-        elif new_state in ("menu", "game_over", "high_scores"):
+        elif new_state in ("menu", "game_over", "high_scores", "controls"):
             self.audio.stop_music()
 
     def _draw_mute_indicator(self) -> None:
@@ -251,6 +257,8 @@ class Game:
                 self.audio.play("menu_click")
             if action == "high_scores":
                 self.fade.start("high_scores")
+            elif action == "controls":
+                self.fade.start("controls")
             elif action == "back":
                 # Same transition as the ESC-from-options path.
                 self.fade.start("menu")
@@ -283,6 +291,14 @@ class Game:
                 # matching the ESC behavior - never straight to the menu.
                 self.fade.start("options")
 
+        elif self.state == "controls":
+            action = self.controls_screen.handle_click(mouse_pos)
+            if action:
+                self.audio.play("menu_click")
+            if action == "back":
+                # Same convention as high_scores: BACK returns to Options.
+                self.fade.start("options")
+
     def _handle_keydown(self, key: int) -> None:
         # Global mute toggle, available in every state.
         if key == pygame.K_m:
@@ -298,10 +314,12 @@ class Game:
         if key == pygame.K_ESCAPE and self.state == "options":
             self.fade.start("menu")
 
-        # The high-scores screen is reached via Options, so ESC (like the
-        # BACK button) returns one level up to Options - consistent with ESC
-        # from Options returning to the main menu.
+        # The high-scores and controls screens are reached via Options, so
+        # ESC (like their BACK buttons) returns one level up to Options -
+        # consistent with ESC from Options returning to the main menu.
         if key == pygame.K_ESCAPE and self.state == "high_scores":
+            self.fade.start("options")
+        if key == pygame.K_ESCAPE and self.state == "controls":
             self.fade.start("options")
 
     # ------------------------------------------------------------------ #
