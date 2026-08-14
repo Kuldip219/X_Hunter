@@ -190,7 +190,13 @@ class OptionsScreen:
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.high_scores_rect = assets.score_img.get_rect(
-            center=(screen_width // 2, 700)
+            center=(screen_width // 2, 680)
+        )
+        # The same back.png banner the high-scores screen uses (shared
+        # loading/scaling helper in assets.py): a second way to trigger the
+        # ESC-from-options action (return to the main menu).
+        self.back_rect = assets.back_img.get_rect(
+            center=(screen_width // 2, 765)
         )
         self._dragging: Optional[str] = None  # "music" | "sfx" | None
 
@@ -210,11 +216,13 @@ class OptionsScreen:
     # ------------------------------------------------------------------ #
 
     def _buttons(self) -> list[tuple[str, pygame.Rect]]:
-        return [("high_scores", self.high_scores_rect)]
+        return [("high_scores", self.high_scores_rect), ("back", self.back_rect)]
 
     def handle_click(self, mouse_pos: tuple[int, int]) -> Optional[str]:
         if self.high_scores_rect.collidepoint(mouse_pos):
             return "high_scores"
+        if self.back_rect.collidepoint(mouse_pos):
+            return "back"
         return None
 
     # ------------------------------------------------------------------ #
@@ -314,10 +322,8 @@ class OptionsScreen:
             screen.blit(row, row.get_rect(center=(self.screen_width // 2, 440 + i * 40)))
 
         _draw_button(screen, self.assets.score_img, self.high_scores_rect, mouse_pos)
+        _draw_button(screen, self.assets.back_img, self.back_rect, mouse_pos)
         _track_hover(self, mouse_pos)
-
-        back_text = self.assets.font.render("Press ESC to go back", True, settings.LIGHT_GRAY)
-        screen.blit(back_text, back_text.get_rect(center=(self.screen_width // 2, 775)))
 
 
 class HighScoresMenu:
