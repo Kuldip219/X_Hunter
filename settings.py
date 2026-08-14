@@ -122,8 +122,37 @@ PLAYER_EXPLOSION_FRAME_DELAY: int = 5
 # PyInstaller bundle). Each SFX maps a logical event name to its filename.
 AUDIO_DIR: str = "Assets/audio"
 MUSIC_FILE: str = "gameplay_music.wav"
+# Default volumes (0.0-1.0) - the out-of-the-box balance. These are also the
+# defaults the persisted user settings (settings.json) fall back to when the
+# file is missing or corrupted; the Options screen sliders adjust them live.
 SFX_VOLUME: float = 0.7
 MUSIC_VOLUME: float = 0.45
+
+# User settings persistence: volumes live in SETTINGS_FILE (a JSON sibling of
+# highscores.json in the game's working directory), gitignored like it.
+SETTINGS_FILE: str = "settings.json"
+
+# --- Options screen --- #
+# Horizontal volume sliders: track size (width x height) and the grab handle
+# footprint. The handle travels along the track; value = handle position /
+# track width, clamped to [0, 1].
+SLIDER_TRACK_SIZE: tuple[int, int] = (220, 12)
+SLIDER_HANDLE_SIZE: tuple[int, int] = (18, 26)
+
+# --- Controls reference (read-only, sourced from the real bindings) --- #
+# Each row is (action, key). These match the actual input handling: player
+# movement reads K_LEFT/K_RIGHT (player.py handle_input), firing is K_SPACE
+# held (game.py _update_game), mute is K_m and pause/back are K_ESCAPE
+# (game.py _handle_keydown). Restart has no keyboard binding - it is the
+# RESTART button on the game-over screen.
+CONTROLS: list[tuple[str, str]] = [
+    ("Move", "LEFT / RIGHT"),
+    ("Fire (hold)", "SPACE"),
+    ("Pause / Resume", "ESC"),
+    ("Mute / Unmute", "M"),
+    ("Back (menus)", "ESC"),
+    ("Restart", "RESTART button"),
+]
 SFX_FILES: dict[str, str] = {
     "shoot": "shoot.ogg",
     "hit": "hit.ogg",

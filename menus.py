@@ -1,8 +1,9 @@
 """
-Menu screens: main menu, pause menu, game-over menu, the options
-placeholder screen, and the high-scores leaderboard screen. Each menu
-knows how to draw itself and how to turn a mouse click into an action
-string, keeping that logic out of the main loop.
+Menu screens: main menu, pause menu, game-over menu, the options screen
+(volume sliders + controls reference + high-scores entry), and the
+high-scores leaderboard screen. Each menu knows how to draw itself and
+how to turn mouse input into actions, keeping that logic out of the main
+loop.
 """
 
 from __future__ import annotations
@@ -53,9 +54,12 @@ class MainMenu:
         self.audio = audio
         self._last_hovered = None
         self.title_rect = assets.title_img.get_rect(center=(screen_width // 2, 150))
-        self.play_rect = assets.play_img.get_rect(center=(screen_width // 2, 290))
-        self.options_rect = assets.options_img.get_rect(center=(screen_width // 2, 380))
-        self.exit_rect = assets.exit_img.get_rect(center=(screen_width // 2, 560))
+        # Uniform 100px center-to-center spacing (the original layout):
+        # play -> options -> exit. Positions were temporarily re-spaced for
+        # a third button (HIGH SCORES) and never restored when it was removed.
+        self.play_rect = assets.play_img.get_rect(center=(screen_width // 2, 300))
+        self.options_rect = assets.options_img.get_rect(center=(screen_width // 2, 400))
+        self.exit_rect = assets.exit_img.get_rect(center=(screen_width // 2, 500))
 
     def _buttons(self) -> list[tuple[str, pygame.Rect]]:
         return [
@@ -122,8 +126,12 @@ class GameOverMenu:
         self.assets = assets
         self.audio = audio
         self._last_hovered = None
-        self.restart_rect = assets.restart_img.get_rect(center=(screen_width // 2, 330))
-        self.quit_rect = assets.quit_gameover_img.get_rect(center=(screen_width // 2, 490))
+        # Uniform 100px center-to-center spacing (matches the pause menu and
+        # the original game-over layout): restart -> quit. The 490 position
+        # was a leftover from when a HIGH SCORES button sat between them at
+        # 410 - removed without recomputing QUIT's position.
+        self.restart_rect = assets.restart_img.get_rect(center=(screen_width // 2, 350))
+        self.quit_rect = assets.quit_gameover_img.get_rect(center=(screen_width // 2, 450))
 
     def _buttons(self) -> list[tuple[str, pygame.Rect]]:
         return [
@@ -157,47 +165,159 @@ class GameOverMenu:
 
 
 class OptionsScreen:
-    """The (still mostly placeholder) options screen. It keeps its original
-    "under construction" text and ESC hint, and now hosts the HIGH SCORES
-    button (score.png) - the leaderboard's only entry point."""
+    """Options: two live volume sliders (music / SFX), a read-only controls
+    reference, the HIGH SCORES banner (score.png, the leaderboard's entry
+    point), and the ESC hint for going back.
+
+    Sliders are mouse-draggable: clicking anywhere on a track jumps the
+    handle there, and the handle drags while the button is held. Values are
+    applied live to the AudioManager on every change and persisted to the
+    settings store on mouse-up (the store is only saved once per gesture).
+    """
 
     def __init__(
-        self, assets: "Assets", screen_width: int, screen_height: int, audio=None
+        self,
+        assets: "Assets",
+        screen_width: int,
+        screen_height: int,
+        audio=None,
+        store=None,
     ) -> None:
         self.assets = assets
         self.audio = audio
+        self.store = store
         self._last_hovered = None
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.high_scores_rect = assets.score_img.get_rect(
-            center=(screen_width // 2, 520)
+            center=(screen_width // 2, 700)
         )
+        self._dragging: Optional[str] = None  # "music" | "sfx" | None
+
+        # Volume slider rows: (key, label, track rect). The track is centered
+        # horizontally with the label left of it and the % readout right.
+        track_size = settings.SLIDER_TRACK_SIZE
+        self.slider_tracks: dict[str, pygame.Rect] = {}
+        self.slider_labels: dict[str, tuple[str, int]] = {}
+        for name, label, y in (("music", "Music Volume", 240), ("sfx", "SFX Volume", 310)):
+            track = pygame.Rect(0, 0, track_size[0], track_size[1])
+            track.center = (screen_width // 2 + 50, y)
+            self.slider_tracks[name] = track
+            self.slider_labels[name] = (label, y)
+
+    # ------------------------------------------------------------------ #
+    # Buttons (hover SFX + high-scores entry)
+    # ------------------------------------------------------------------ #
 
     def _buttons(self) -> list[tuple[str, pygame.Rect]]:
         return [("high_scores", self.high_scores_rect)]
-
-    def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
-        text = self.assets.font.render(
-            "It's under construction", True, settings.WHITE
-        )
-        rect = text.get_rect(center=(self.screen_width // 2, self.screen_height // 2))
-        screen.blit(text, rect)
-
-        back_text = self.assets.font.render(
-            "Press ESC to go back", True, settings.LIGHT_GRAY
-        )
-        back_rect = back_text.get_rect(
-            center=(self.screen_width // 2, self.screen_height // 2 + 50)
-        )
-        screen.blit(back_text, back_rect)
-
-        _draw_button(screen, self.assets.score_img, self.high_scores_rect, mouse_pos)
-        _track_hover(self, mouse_pos)
 
     def handle_click(self, mouse_pos: tuple[int, int]) -> Optional[str]:
         if self.high_scores_rect.collidepoint(mouse_pos):
             return "high_scores"
         return None
+
+    # ------------------------------------------------------------------ #
+    # Sliders
+    # ------------------------------------------------------------------ #
+
+    def _fraction_at(self, track: pygame.Rect, x: int) -> float:
+        """Slider value (0.0-1.0) for a mouse x within the track."""
+        return max(0.0, min(1.0, (x - track.left) / track.width))
+
+    def _apply_value(self, name: str, fraction: float) -> None:
+        """Clamp and apply a slider value to the store (live) and audio."""
+        fraction = max(0.0, min(1.0, fraction))
+        if self.store is not None:
+            if name == "music":
+                self.store.set_music_volume(fraction)
+            else:
+                self.store.set_sfx_volume(fraction)
+        if self.audio is not None:
+            if name == "music":
+                self.audio.set_music_volume(fraction)
+            else:
+                self.audio.set_sfx_volume(fraction)
+
+    def _hit_slider(self, pos: tuple[int, int]) -> Optional[str]:
+        """Which slider (if any) the mouse is on. The hit zone extends above
+        and below the track so the handle is grabbable too."""
+        for name, track in self.slider_tracks.items():
+            if track.inflate(0, 30).collidepoint(pos):
+                return name
+        return None
+
+    def handle_mouse_down(self, pos: tuple[int, int]) -> bool:
+        """Grab a slider if the click is on it; returns True when a slider
+        owns this press (so the caller skips normal button handling)."""
+        name = self._hit_slider(pos)
+        if name is None:
+            return False
+        self._dragging = name
+        self._apply_value(name, self._fraction_at(self.slider_tracks[name], pos[0]))
+        return True
+
+    def handle_mouse_motion(self, pos: tuple[int, int]) -> None:
+        """While a slider is held, follow the mouse (standard drag)."""
+        if self._dragging is not None:
+            track = self.slider_tracks[self._dragging]
+            self._apply_value(self._dragging, self._fraction_at(track, pos[0]))
+
+    def handle_mouse_up(self, pos: tuple[int, int]) -> None:
+        """Release the slider: apply the final value and persist it once."""
+        if self._dragging is not None:
+            track = self.slider_tracks[self._dragging]
+            self._apply_value(self._dragging, self._fraction_at(track, pos[0]))
+            self._dragging = None
+            if self.store is not None:
+                self.store.save()
+
+    # ------------------------------------------------------------------ #
+    # Drawing
+    # ------------------------------------------------------------------ #
+
+    def _draw_slider(self, screen: pygame.Surface, name: str) -> None:
+        label, y = self.slider_labels[name]
+        track = self.slider_tracks[name]
+        value = 0.5
+        if self.store is not None:
+            value = (
+                self.store.music_volume if name == "music" else self.store.sfx_volume
+            )
+
+        label_img = self.assets.font.render(label, True, settings.WHITE)
+        screen.blit(label_img, label_img.get_rect(midleft=(70, y)))
+
+        # Track: dark bar with a lighter border.
+        pygame.draw.rect(screen, (45, 45, 45), track)
+        pygame.draw.rect(screen, settings.LIGHT_GRAY, track, 2)
+
+        # Handle: a small rounded box positioned by the current value.
+        handle = pygame.Rect(0, 0, *settings.SLIDER_HANDLE_SIZE)
+        handle.center = (track.left + int(value * track.width), y)
+        pygame.draw.rect(screen, settings.WHITE, handle)
+
+        pct_img = self.assets.font.render(f"{int(round(value * 100))}%", True, settings.LIGHT_GRAY)
+        screen.blit(pct_img, pct_img.get_rect(midright=(570, y)))
+
+    def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
+        title = self.assets.big_font.render("OPTIONS", True, settings.WHITE)
+        screen.blit(title, title.get_rect(center=(self.screen_width // 2, 100)))
+
+        self._draw_slider(screen, "music")
+        self._draw_slider(screen, "sfx")
+
+        controls_heading = self.assets.font.render("CONTROLS", True, settings.LIGHT_GRAY)
+        screen.blit(controls_heading, controls_heading.get_rect(center=(self.screen_width // 2, 400)))
+        for i, (action, key) in enumerate(settings.CONTROLS):
+            row = self.assets.font.render(f"{action}: {key}", True, settings.WHITE)
+            screen.blit(row, row.get_rect(center=(self.screen_width // 2, 440 + i * 40)))
+
+        _draw_button(screen, self.assets.score_img, self.high_scores_rect, mouse_pos)
+        _track_hover(self, mouse_pos)
+
+        back_text = self.assets.font.render("Press ESC to go back", True, settings.LIGHT_GRAY)
+        screen.blit(back_text, back_text.get_rect(center=(self.screen_width // 2, 775)))
 
 
 class HighScoresMenu:

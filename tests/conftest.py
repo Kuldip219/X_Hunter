@@ -39,6 +39,7 @@ def game(tmp_path, monkeypatch):
     directory so leaderboard writes never touch the real project checkout.
     """
     monkeypatch.setattr(settings, "HIGHSCORE_FILE", str(tmp_path / "highscores.json"))
+    monkeypatch.setattr(settings, "SETTINGS_FILE", str(tmp_path / "settings.json"))
     g = Game()
     yield g
     pygame.quit()
