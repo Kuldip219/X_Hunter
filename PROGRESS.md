@@ -96,7 +96,9 @@ capped at 1.0. Enemy speed scales `5 + 4·d` capped at 9 px/frame; enemy count
 scales `5 + 5·d` capped at 10. Invisible (no UI). Resets to baseline on restart;
 frozen while dead (H1).
 
-### 3.11 Delta-time movement (uncommitted) — **54 tests** (details in §4)
+### 3.11 Delta-time movement — **54 tests** (details in §4)
+
+### 3.12 Fixed-timestep accumulator (uncommitted) — **62 tests** (details in §4.7)
 
 ## 4. Delta-time conversion (latest work)
 
@@ -156,6 +158,47 @@ updates only).
 - Fire cadence: 5 shots per held second at both 30 and 60 fps (no burst-fire).
 - i-frame window expires on real time across mixed frame rates.
 
+### 4.7 Fixed-timestep accumulator (latest work)
+
+**The problem:** after the dt conversion, *distance per step* is correct, but the
+simulation still ran once per rendered frame — at very low/high display rates the
+step size still varied (collision tunneling at low fps, numerical drift at high
+fps).
+
+**The fix — `FIXED_DT = 1.0/60.0` (60 Hz) accumulator in `Game`:**
+
+- `Game.run()` computes raw dt from `clock.tick()`, banks `min(raw_dt, MAX_FRAME_DT)`
+  into `self.accumulator`, and drains it in constant `FIXED_DT` steps via
+  `_advance_simulation(raw_dt, keys)`. Each full `FIXED_DT` runs one
+  `_update_game(keys, FIXED_DT)`; a rendered frame can therefore run 0, 1, or
+  several simulation steps.
+- **MAX_FRAME_DT interaction:** the clamp now happens *before* time enters the
+  accumulator, so a huge stall banks at most 0.05 s → exactly 3 catch-up steps
+  (verified), never a spiral of death.
+- **Rendering decoupled:** `_draw_frame()` renders once per rendered frame from
+  current entity state; no interpolation. Input polling, events, and state
+  transitions stay per-rendered-frame — only the simulation step is fixed-rate.
+- **No banking outside gameplay:** in menu/pause/game_over the accumulator is
+  cleared, so paused time never fast-forwards gameplay on resume. (While the
+  player is dead but state is still "game", `_update_game`'s H1 early-return
+  makes the steps no-ops.)
+- **`_update_and_draw`** (the direct-drive entry the tests/preview use) still
+  simulates exactly one 60 Hz step per call, so it reproduces the accumulator
+  at a perfect 60 Hz render rate.
+
+**Verified unaffected:** H1 death-freeze, i-frames, hitbox logic, hold-to-fire
+cadence, and the difficulty ramp all pass unchanged — they were already dt-based,
+so stepping at constant FIXED_DT falls out for free (all 54 prior tests green,
+behavior identical). Difficulty elapsed time uses real `get_ticks()`, which now
+matches accumulator time exactly.
+
+**Tests (`tests/test_fixed_timestep.py`, 8 new):** choppy real frame times
+(alternating 1/30 and 1/144) produce the same simulated seconds/displacement as
+uniform 60 Hz; a 1 s lag spike banks at most 3 steps (and repeated spikes stay
+capped); one rendered frame runs 2 steps from 2.5×FIXED_DT banked; a sub-step
+frame runs 0 steps (render-only); no banking in menu; `_update_and_draw` still
+simulates exactly one step; and a real `run()` loop smoke test.
+
 ## 5. Current repo state
 
 ```
@@ -174,19 +217,20 @@ a9e5b5b Initial commit
 ```
 
 - **Tracked files:** 71 (all source/assets/tests).
-- **Tests:** 54 passing, 1 warning (the intentional mixer-failure test) in ~5.4 s.
-- **Uncommitted:** the delta-time conversion (`settings.py`, `player.py`,
-  `enemy.py`, `bullet.py`, `game.py`, 5 updated test files, new
-  `tests/test_delta_time.py`). Also note: `AUDIT.md` and `PROGRESS.md` were
-  deleted in the working tree outside this work (this file restores `PROGRESS.md`).
+- **Tests:** 62 passing, 1 warning (the intentional mixer-failure test) in ~6.2 s.
+- **Uncommitted:** the delta-time conversion + fixed-timestep accumulator
+  (`settings.py`, `player.py`, `enemy.py`, `bullet.py`, `game.py`, 6 updated
+  test files, new `tests/test_delta_time.py` and `tests/test_fixed_timestep.py`).
+  Also note: `AUDIT.md` and `PROGRESS.md` were deleted in the working tree
+  outside this work (this file restores `PROGRESS.md`).
 - **Live preview:** registered at `http://127.0.0.1:8123/frame.html` (headless
   autopilot streaming real game frames; see `.freebuff/run.md`).
 
 ## 6. Still open / suggested next steps
 
-- **Fixed-timestep loop:** an accumulator so simulation runs at constant 60 Hz
-  regardless of display frame rate (natural follow-up to the dt work).
-- **FPS counter** in the HUD to verify dt behavior by eye.
+- **FPS counter** in the HUD to verify dt/accumulator behavior by eye.
+- **Interpolation between sim steps** for perfectly smooth rendering at high
+  refresh rates (currently render shows the latest fixed step's state).
 - **Options screen** (volume control, difficulty tuning) — audio mute is global only.
 - **High scores** persistence; **audio for the menu** (calmer loop, nice-to-have).
 - **Difficulty clock includes pause time** — excluding paused time is a possible tweak.

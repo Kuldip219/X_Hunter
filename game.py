@@ -42,6 +42,9 @@ class Game:
 
         self.running = True
         self.state = "menu"
+        # Fixed-timestep accumulator: banks real elapsed time and drains it in
+        # constant FIXED_DT simulation steps (see _advance_simulation).
+        self.accumulator = 0.0
 
         # player, bullets, enemies, explosions, and score are all
         # initialized by reset_game() below.
@@ -72,15 +75,19 @@ class Game:
 
     def run(self) -> None:
         while self.running:
-            # Delta time in seconds since the previous frame, clamped so a
-            # lag spike / tab switch cannot teleport entities or burst-fire.
-            dt = min(self.clock.tick(settings.FPS) / 1000.0, settings.MAX_FRAME_DT)
+            # Real elapsed time since the previous rendered frame. The raw dt
+            # is capped by MAX_FRAME_DT BEFORE it enters the accumulator, so a
+            # huge stall banks at most 0.05 s of catch-up (3 steps) instead of
+            # spiraling into dozens of simulation steps in one frame.
+            raw_dt = self.clock.tick(settings.FPS) / 1000.0
+            keys = pygame.key.get_pressed()
+            self._advance_simulation(raw_dt, keys)
 
             self.screen.fill(settings.BLACK)
             mouse_pos = pygame.mouse.get_pos()
 
             self._handle_events(mouse_pos)
-            self._update_and_draw(mouse_pos, dt)
+            self._draw_frame(mouse_pos)
 
             new_state = self.fade.update()
             if new_state is not None:
@@ -91,13 +98,44 @@ class Game:
 
         pygame.quit()
 
-    def _update_and_draw(self, mouse_pos: tuple[int, int], dt: float = 1.0 / settings.FPS) -> None:
+    def _advance_simulation(self, raw_dt: float, keys) -> int:
+        """Fixed-timestep accumulator: gameplay always advances in constant
+        FIXED_DT steps, decoupled from the render rate.
+
+        Real elapsed time (capped at MAX_FRAME_DT per rendered frame) is
+        banked into the accumulator; each full FIXED_DT runs one _update_game
+        step. Returns the number of simulation steps run for this rendered
+        frame (0..N): a fast render loop runs 0 steps on some frames, and a
+        slow one runs several. Rendering, event polling, and state-machine
+        transitions stay per-rendered-frame; only the simulation step is
+        fixed-rate.
+
+        While the state is not "game" (menu/pause/game_over) no simulation
+        runs and the accumulator is cleared, so time spent paused or in a menu
+        never fast-forwards gameplay on resume.
+        """
+        if self.state != "game":
+            self.accumulator = 0.0
+            return 0
+
+        self.accumulator += min(raw_dt, settings.MAX_FRAME_DT)
+        steps = 0
+        while self.accumulator >= settings.FIXED_DT:
+            self._update_game(keys, settings.FIXED_DT)
+            self.accumulator -= settings.FIXED_DT
+            steps += 1
+        return steps
+
+    def _draw_frame(self, mouse_pos: tuple[int, int]) -> None:
+        """Render exactly one frame from current entity state.
+
+        Draws once per rendered frame regardless of how many simulation steps
+        ran; no interpolation between steps (kept simple, per design).
+        """
         if self.state == "menu":
             self.main_menu.draw(self.screen, mouse_pos)
 
         elif self.state == "game":
-            keys = pygame.key.get_pressed()
-            self._update_game(keys, dt)
             self._draw_game()
 
         elif self.state == "options":
@@ -112,6 +150,19 @@ class Game:
         # Global (non-intrusive) indication that all audio is muted.
         if self.audio.muted:
             self._draw_mute_indicator()
+
+    def _update_and_draw(self, mouse_pos: tuple[int, int], dt: float = 1.0 / settings.FPS) -> None:
+        """Simulate one gameplay step at dt, then render one frame.
+
+        This is the direct-drive entry point used by the test suite and the
+        preview autopilot (it reproduces exactly one 60 Hz step per call).
+        Game.run() uses the fixed-timestep accumulator instead, so gameplay
+        stays on constant steps regardless of render rate.
+        """
+        if self.state == "game":
+            keys = pygame.key.get_pressed()
+            self._update_game(keys, dt)
+        self._draw_frame(mouse_pos)
 
     def _change_state(self, new_state: str) -> None:
         """Apply a completed state transition and keep the music in sync."""
