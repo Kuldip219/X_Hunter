@@ -26,12 +26,19 @@ import pygame  # noqa: E402
 
 import pytest  # noqa: E402
 
+import settings  # noqa: E402
+
 from game import Game  # noqa: E402
 
 
 @pytest.fixture()
-def game():
-    """A fresh Game instance in the initial 'menu' state."""
+def game(tmp_path, monkeypatch):
+    """A fresh Game instance in the initial 'menu' state.
+
+    The persistent high-score file is redirected into a per-test temp
+    directory so leaderboard writes never touch the real project checkout.
+    """
+    monkeypatch.setattr(settings, "HIGHSCORE_FILE", str(tmp_path / "highscores.json"))
     g = Game()
     yield g
     pygame.quit()

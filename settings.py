@@ -164,5 +164,21 @@ DAMAGE_FLASH_COLOR: tuple[int, int, int] = (255, 0, 0)
 PAUSE_OVERLAY_COLOR: tuple[int, int, int] = (30, 30, 30)
 PAUSE_OVERLAY_ALPHA: int = 180
 
+# --- High scores --- #
+# Persistent top-N leaderboard. Scores are stored in HIGHSCORE_FILE (a JSON
+# file next to the game's working directory - the project root when run from
+# source) so they survive restarts. A score earns a slot when the table is
+# not full, or when it is strictly higher than the current last place; the
+# list is always kept sorted best-first and trimmed to HIGHSCORE_MAX entries.
+HIGHSCORE_MAX: int = 10
+HIGHSCORE_FILE: str = "highscores.json"
+
+# Menu banner images (score.png / back.png) scale to fit WITHIN these
+# footprints, preserving their aspect ratio so they never distort: score.png
+# is the High Scores button on the Options screen, back.png the Back button
+# on the high-scores screen.
+SCORE_IMG_SIZE: tuple[int, int] = (250, 80)
+BACK_IMG_SIZE: tuple[int, int] = (250, 80)
+
 # --- Button hover offset (buttons nudge down 5px on hover) ---
 BUTTON_HOVER_OFFSET: int = 5

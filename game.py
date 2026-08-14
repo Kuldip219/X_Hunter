@@ -12,7 +12,8 @@ from bullet import Bullet
 from difficulty import Difficulty
 from enemy import Enemy
 from explosion import Explosion
-from menus import GameOverMenu, MainMenu, OptionsScreen, PauseMenu
+from highscores import HighScoreTable
+from menus import GameOverMenu, HighScoresMenu, MainMenu, OptionsScreen, PauseMenu
 from player import Player
 
 
@@ -29,10 +30,20 @@ class Game:
 
         self.audio = AudioManager()
 
+        # Persistent top-10 leaderboard (JSON next to the working dir).
+        # last_run_rank tracks where the most recent run landed on it (None
+        # when it didn't qualify), used to highlight that row on the
+        # high-scores screen.
+        self.high_scores = HighScoreTable.load()
+        self.last_run_rank = None
+
         self.main_menu = MainMenu(self.assets, settings.WIDTH, audio=self.audio)
         self.pause_menu = PauseMenu(self.assets, settings.WIDTH, audio=self.audio)
         self.game_over_menu = GameOverMenu(self.assets, settings.WIDTH, audio=self.audio)
-        self.options_screen = OptionsScreen(self.assets, settings.WIDTH, settings.HEIGHT)
+        self.options_screen = OptionsScreen(self.assets, settings.WIDTH, settings.HEIGHT, audio=self.audio)
+        self.high_scores_menu = HighScoresMenu(
+            self.assets, settings.WIDTH, settings.HEIGHT, table=self.high_scores, audio=self.audio
+        )
 
         self.screen_shake = ui.ScreenShake()
         self.damage_flash = ui.DamageFlash()
@@ -68,6 +79,8 @@ class Game:
         # Difficulty clock: elapsed survival time is measured from here, so a
         # restart always starts the ramp back at baseline (no carryover).
         self.run_start_ticks = pygame.time.get_ticks()
+        # A fresh run hasn't earned a leaderboard rank yet.
+        self.last_run_rank = None
 
     # ------------------------------------------------------------------ #
     # Main loop
@@ -139,13 +152,16 @@ class Game:
             self._draw_game()
 
         elif self.state == "options":
-            self.options_screen.draw(self.screen)
+            self.options_screen.draw(self.screen, mouse_pos)
 
         elif self.state == "pause":
             self.pause_menu.draw(self.screen, mouse_pos)
 
         elif self.state == "game_over":
             self.game_over_menu.draw(self.screen, mouse_pos)
+
+        elif self.state == "high_scores":
+            self.high_scores_menu.draw(self.screen, mouse_pos, self.last_run_rank)
 
         # Global (non-intrusive) indication that all audio is muted.
         if self.audio.muted:
@@ -171,7 +187,7 @@ class Game:
             self.audio.play_music()
         elif new_state == "pause":
             self.audio.pause_music()
-        elif new_state in ("menu", "game_over"):
+        elif new_state in ("menu", "game_over", "high_scores"):
             self.audio.stop_music()
 
     def _draw_mute_indicator(self) -> None:
@@ -208,6 +224,13 @@ class Game:
             elif action == "exit":
                 self.running = False
 
+        elif self.state == "options":
+            action = self.options_screen.handle_click(mouse_pos)
+            if action:
+                self.audio.play("menu_click")
+            if action == "high_scores":
+                self.fade.start("high_scores")
+
         elif self.state == "pause":
             action = self.pause_menu.handle_click(mouse_pos)
             if action:
@@ -227,6 +250,15 @@ class Game:
             elif action == "quit_to_menu":
                 self.fade.start("menu")
 
+        elif self.state == "high_scores":
+            action = self.high_scores_menu.handle_click(mouse_pos)
+            if action:
+                self.audio.play("menu_click")
+            if action == "back":
+                # Reached via Options, so BACK returns one level up (Options),
+                # matching the ESC behavior - never straight to the menu.
+                self.fade.start("options")
+
     def _handle_keydown(self, key: int) -> None:
         # Global mute toggle, available in every state.
         if key == pygame.K_m:
@@ -241,6 +273,12 @@ class Game:
 
         if key == pygame.K_ESCAPE and self.state == "options":
             self.fade.start("menu")
+
+        # The high-scores screen is reached via Options, so ESC (like the
+        # BACK button) returns one level up to Options - consistent with ESC
+        # from Options returning to the main menu.
+        if key == pygame.K_ESCAPE and self.state == "high_scores":
+            self.fade.start("options")
 
     # ------------------------------------------------------------------ #
     # "game" state: update
@@ -373,5 +411,10 @@ class Game:
                 # "game_over" - no revival, no re-hits during the fade-out.
                 self.fade.start("game_over")
                 self.player.explosion = None
+                # Record the final score on the persistent leaderboard right
+                # here, once per run: the score is final (gameplay is frozen)
+                # and writing a tiny JSON file is effectively instant and
+                # failure-tolerant, so this never delays the fade transition.
+                self.last_run_rank = self.high_scores.add(self.score)
 
         ui.draw_score(self.screen, self.assets.font, self.score)

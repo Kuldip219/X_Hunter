@@ -34,13 +34,15 @@ class Assets:
     quit_img: pygame.Surface = None
     restart_img: pygame.Surface = None
     quit_gameover_img: pygame.Surface = None
+    score_img: pygame.Surface = None
+    back_img: pygame.Surface = None
 
     @classmethod
     def load(cls) -> "Assets":
         """Load, scale, and return every game asset in one call."""
 
         font = pygame.font.Font(
-            resource_path(settings.FONT_PATH), 
+            resource_path(settings.FONT_PATH),
             settings.FONT_SIZE_SMALL
         )
         big_font = pygame.font.Font(
@@ -98,6 +100,8 @@ class Assets:
         quit_gameover_img = pygame.transform.scale(
             pygame.image.load(resource_path("Assets/quitt.png")), settings.QUIT_GAMEOVER_IMG_SIZE
         )
+        score_img = _load_menu_banner("Assets/score.png", settings.SCORE_IMG_SIZE, font, "HIGH SCORES")
+        back_img = _load_menu_banner("Assets/back.png", settings.BACK_IMG_SIZE, font, "BACK")
 
         return cls(
             font=font,
@@ -116,4 +120,32 @@ class Assets:
             quit_img=quit_img,
             restart_img=restart_img,
             quit_gameover_img=quit_gameover_img,
+            score_img=score_img,
+            back_img=back_img,
         )
+
+
+def _load_menu_banner(
+    path: str,
+    footprint: tuple[int, int],
+    font: pygame.font.Font,
+    label: str,
+) -> pygame.Surface:
+    """Load a menu banner image scaled to FIT WITHIN `footprint`, preserving
+    its aspect ratio (never stretched/distorted). If the file is missing or
+    unreadable, fall back to a font-rendered button so the game still boots
+    - consistent with the game's non-fatal asset handling elsewhere.
+    """
+    try:
+        img = pygame.image.load(resource_path(path))
+    except (pygame.error, FileNotFoundError):
+        print(f"WARNING: could not load {path}; using font-rendered '{label}' button")
+        surface = pygame.Surface(footprint, pygame.SRCALPHA)
+        surface.fill((45, 45, 45, 255))
+        text = font.render(label, True, settings.WHITE)
+        surface.blit(text, text.get_rect(center=(footprint[0] // 2, footprint[1] // 2)))
+        return surface
+    w, h = img.get_size()
+    scale = min(footprint[0] / w, footprint[1] / h)
+    new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+    return pygame.transform.scale(img, new_size)

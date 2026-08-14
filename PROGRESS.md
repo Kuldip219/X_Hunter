@@ -199,6 +199,22 @@ capped); one rendered frame runs 2 steps from 2.5×FIXED_DT banked; a sub-step
 frame runs 0 steps (render-only); no banking in menu; `_update_and_draw` still
 simulates exactly one step; and a real `run()` loop smoke test.
 
+### 3.13 High-score leaderboard (uncommitted) — **83 tests** (details in §7)
+
+Persistent top-10 leaderboard with a dedicated `high_scores` state (see §7).
+
+### 3.14 High-scores navigation: entry moved to Options (uncommitted) — **86 tests**
+
+Per project-head direction, the standalone HIGH SCORES buttons were removed
+from the main menu and the game-over screen; the leaderboard is now reached
+only via the Options screen (which previously existed as a placeholder). The
+`score.png` banner (1489×382) is the Options entry button and `back.png`
+(1491×354) is the high-scores screen's BACK button; both load through the
+standard `assets.py` path, scale to fit the 250×80 footprint preserving aspect
+ratio, and fall back to font-rendered buttons if missing (non-fatal). BACK
+and ESC on the high-scores screen return to Options (one level up), matching
+ESC-from-Options → main menu. Leaderboard logic/storage untouched.
+
 ## 5. Current repo state
 
 ```
@@ -217,12 +233,14 @@ a9e5b5b Initial commit
 ```
 
 - **Tracked files:** 71 (all source/assets/tests).
-- **Tests:** 62 passing, 1 warning (the intentional mixer-failure test) in ~6.2 s.
-- **Uncommitted:** the delta-time conversion + fixed-timestep accumulator
-  (`settings.py`, `player.py`, `enemy.py`, `bullet.py`, `game.py`, 6 updated
-  test files, new `tests/test_delta_time.py` and `tests/test_fixed_timestep.py`).
-  Also note: `AUDIT.md` and `PROGRESS.md` were deleted in the working tree
-  outside this work (this file restores `PROGRESS.md`).
+- **Tests:** 86 passing, 1 warning (the intentional mixer-failure test) in ~10 s.
+- **Uncommitted:** the delta-time conversion, fixed-timestep accumulator, the
+  high-score leaderboard, and the Options-screen navigation change
+  (`settings.py`, `player.py`, `enemy.py`, `bullet.py`, `game.py`, `menus.py`,
+  `assets.py`, new `highscores.py`, updated test files incl.
+  `tests/test_highscores.py`). Also note: `AUDIT.md` and `PROGRESS.md` were
+  deleted in the working tree outside this work (this file restores
+  `PROGRESS.md`).
 - **Live preview:** registered at `http://127.0.0.1:8123/frame.html` (headless
   autopilot streaming real game frames; see `.freebuff/run.md`).
 
@@ -232,9 +250,68 @@ a9e5b5b Initial commit
 - **Interpolation between sim steps** for perfectly smooth rendering at high
   refresh rates (currently render shows the latest fixed step's state).
 - **Options screen** (volume control, difficulty tuning) — audio mute is global only.
-- **High scores** persistence; **audio for the menu** (calmer loop, nice-to-have).
+- **Audio for the menu** (calmer loop, nice-to-have).
 - **Difficulty clock includes pause time** — excluding paused time is a possible tweak.
 - **Hold-to-fire cadence tuning** (`PLAYER_FIRE_COOLDOWN_SECONDS` is a single constant).
 - **Artifact history purge** (rewriting the initial commit to drop build/dist) —
   deliberately deferred; a separate, higher-risk decision.
-- **Commit the delta-time changes** (currently uncommitted).
+- **Commit the pending delta-time + fixed-timestep + high-scores changes**
+  (currently uncommitted).
+
+## 7. High-score leaderboard (latest work)
+
+### 7.1 Storage (documented choice)
+
+- **Path:** `highscores.json` in the game's **working directory** — the project
+  root when run from source, the folder the game is launched from when
+  packaged. Kept simple and portable, matching how assets already resolve
+  relative to the cwd; no app-data plumbing. Gitignored (it is runtime user
+  data, not source).
+- **Format:** a JSON array of `{"score": int, "timestamp": float}`, kept sorted
+  best-first (ties: earlier timestamp ranks higher) and trimmed to the top
+  `HIGHSCORE_MAX = 10` entries.
+- **Defensive everywhere:** a missing file, corrupted JSON, wrong shape
+  (non-list / non-dict / missing fields) all load as "no scores yet"; a
+  failed write (read-only or missing directory) is logged and the score stays
+  in memory for the session. Writes are atomic (temp file + `os.replace`).
+  `highscores.py` never raises to the game.
+
+### 7.2 Qualify / insert / trim
+
+- `qualifies(score)`: table not full → any score qualifies; otherwise only
+  scores **strictly higher** than the current 10th place (a tie at #10 does
+  not qualify).
+- `add(score, timestamp)`: insert, re-sort, trim to 10, persist immediately,
+  return the 0-based rank of the new entry (or `None` if it didn't qualify).
+
+### 7.3 Where it hooks in (game.py)
+
+- The run's final score is recorded **exactly once**, in `_draw_game()` at the
+  moment the death explosion finishes and the fade to `game_over` starts — the
+  score is final there (gameplay frozen by the H1 early-return) and the tiny
+  JSON write is effectively instant, so the game-over fade is never delayed.
+  `last_run_rank` stores the rank (or `None`) and `reset_game()` clears it.
+- **New state `high_scores`**: reached only via the Options screen (the
+  `score.png` banner button on `OptionsScreen`, the placeholder's new entry
+  point — the standalone main-menu and game-over HIGH SCORES buttons were
+  removed). BACK button (`back.png`) and ESC both return to Options (one
+  level up, consistent with ESC-from-Options → menu). Uses the existing
+  `FadeTransition`; music stops on entry like menu/game_over; the accumulator
+  never banks in this state (it isn't `"game"`).
+- The `HighScoresMenu` lists ranks 1–10 with score + date, and marks the
+  just-finished run's row with a yellow `NEW` badge.
+
+### 7.4 Tests (`tests/test_highscores.py`, 24 tests)
+
+Table logic (sorted insertion, top placement, non-qualifying + tie-at-10
+rejection, trim to 10, tie ordering), persistence round-trip, missing/corrupt/
+wrong-shape/unwritable degradation, state navigation (leaderboard NOT directly
+reachable from main menu or game-over; reachable via Options; BACK and ESC
+return to Options), banner-asset coverage (score/back load and preserve aspect
+ratio within the 250×80 footprint; font-rendered fallback when the file is
+missing), and end-to-end recording (score recorded on game over and persisted,
+non-qualifying run not recorded, NEW-row highlight, restart resets score/rank
+but keeps the table). The conftest `game` fixture now redirects
+`settings.HIGHSCORE_FILE` to a per-test tmp dir so tests never write to the
+real checkout (this surfaced a default-argument-at-import-time bug in
+`HighScoreTable.load()` that is now fixed).
