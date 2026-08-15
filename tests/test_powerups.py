@@ -2,13 +2,15 @@
 
 Covers the full contract:
 - power-ups only drop from destroyed enemies, respecting POWERUP_DROP_CHANCE,
+- the HEALTH power-up is gated by a health threshold: it is excluded from
+  the drop pool while the player is at or above 80% of their full health
+  bar, and drops normally below it,
 - pickup is automatic on collision (no keypress) and removes the drop,
 - SHIELD grants full temporary invincibility (including lethal hits) that
   expires after its real-time duration,
 - RAPID FIRE shortens the hold-to-fire cooldown and REFRESHES (never stacks),
-- EXTRA LIFE increments the life count with no timer,
-- dying with a spare life respawns the ship; dying with the last life ends
-  the run (the default 1-life behavior is unchanged),
+- HEALTH restores exactly one health-bar segment, capped at max, with no
+  timer involved,
 - drops expire after their on-field lifetime and clear on restart,
 - the in-game HUD renders while power-ups are active without crashing.
 """
@@ -21,7 +23,7 @@ import pytest
 import settings
 from bullet import Bullet
 from enemy import Enemy
-from helpers import KeyState, pump, start_game
+from helpers import KeyState, start_game
 from powerup import PowerUp
 
 
@@ -70,6 +72,8 @@ def test_no_drop_when_roll_fails(game, monkeypatch):
 
 def test_all_three_kinds_can_drop(game, monkeypatch):
     start_game(game)
+    # Below the health threshold so the HEALTH kind is actually in the pool.
+    game.player.health = settings.PLAYER_START_HEALTH - 2
     monkeypatch.setattr(random, "random", lambda: 0.0)
     seen = set()
     for kind in settings.POWERUP_TYPES:
@@ -81,6 +85,53 @@ def test_all_three_kinds_can_drop(game, monkeypatch):
 
 
 # ---------------------------------------------------------------------- #
+# Health drop gating (the 80%-threshold rule)
+# ---------------------------------------------------------------------- #
+
+
+def test_health_powerup_excluded_from_pool_at_or_above_80_percent(game, monkeypatch):
+    start_game(game)
+    monkeypatch.setattr(random, "random", lambda: 0.0)  # force a drop roll
+    pools = []
+    monkeypatch.setattr(
+        random, "choice", lambda seq: pools.append(tuple(seq)) or "shield"
+    )
+
+    # At full health (5/5 = 100%): HEALTH must not be in the drop pool.
+    _drop_enemy(game)
+    game._update_game(KeyState())
+    assert settings.POWERUP_KIND_HEALTH not in pools[-1]
+
+    # At exactly 80% of max (4/5): still excluded.
+    game.player.health = int(
+        settings.PLAYER_START_HEALTH * settings.HEALTH_POWERUP_MIN_HEALTH_FRACTION
+    )
+    _drop_enemy(game)
+    game._update_game(KeyState())
+    assert settings.POWERUP_KIND_HEALTH not in pools[-1]
+
+    # Below 80% (3/5): HEALTH is back in the pool.
+    game.player.health = (
+        int(settings.PLAYER_START_HEALTH * settings.HEALTH_POWERUP_MIN_HEALTH_FRACTION) - 1
+    )
+    _drop_enemy(game)
+    game._update_game(KeyState())
+    assert settings.POWERUP_KIND_HEALTH in pools[-1]
+
+
+def test_health_powerup_drops_below_threshold(game, monkeypatch):
+    start_game(game)
+    game.player.health = settings.PLAYER_START_HEALTH - 2  # 3/5, below 80%
+    monkeypatch.setattr(random, "random", lambda: 0.0)
+    monkeypatch.setattr(random, "choice", lambda seq: "health")
+    _drop_enemy(game)
+
+    game._update_game(KeyState())
+    assert len(game.powerups) == 1
+    assert game.powerups[0].kind == "health"
+
+
+# ---------------------------------------------------------------------- #
 # Pickup
 # ---------------------------------------------------------------------- #
 
@@ -89,16 +140,25 @@ def test_pickup_is_automatic_on_collision_and_removes_drop(game):
     start_game(game)
     p = game.player
     p.y = 600
-    cases = [
-        ("shield", lambda: p.shield_active),
-        ("rapid_fire", lambda: p.rapid_fire_active),
-        ("life", lambda: p.lives == settings.PLAYER_START_LIVES + 1),
-    ]
-    for kind, check in cases:
-        game.powerups = [PowerUp(kind, p.x, p.y)]
-        game._update_game(KeyState())  # no keypress, no movement
-        assert game.powerups == []  # consumed on contact
-        assert check(), f"{kind} effect did not apply on pickup"
+
+    # Shield
+    game.powerups = [PowerUp("shield", p.x, p.y)]
+    game._update_game(KeyState())  # no keypress, no movement
+    assert game.powerups == []
+    assert p.shield_active
+
+    # Rapid fire
+    game.powerups = [PowerUp("rapid_fire", p.x, p.y)]
+    game._update_game(KeyState())
+    assert game.powerups == []
+    assert p.rapid_fire_active
+
+    # Health: below max so the restoration is observable.
+    p.health = settings.PLAYER_START_HEALTH - 2
+    game.powerups = [PowerUp("health", p.x, p.y)]
+    game._update_game(KeyState())
+    assert game.powerups == []
+    assert p.health == settings.PLAYER_START_HEALTH - 1
 
 
 def test_drop_falls_toward_player_and_expires_uncollected(game):
@@ -118,7 +178,7 @@ def test_drop_falls_toward_player_and_expires_uncollected(game):
 
 def test_powerups_cleared_on_restart(game):
     start_game(game)
-    game.powerups = [PowerUp("life", 100, 100)]
+    game.powerups = [PowerUp("health", 100, 100)]
     game.reset_game()
     assert game.powerups == []
 
@@ -215,57 +275,39 @@ def test_rapid_fire_fires_more_bullets_than_normal_cadence(game):
 
 
 # ---------------------------------------------------------------------- #
-# Extra life
+# Health
 # ---------------------------------------------------------------------- #
 
 
-def test_extra_life_increments_count_with_no_timer(game):
+def test_health_restores_one_segment_capped_at_max(game):
     start_game(game)
     p = game.player
-    assert p.lives == settings.PLAYER_START_LIVES
-    p.apply_powerup("life")
-    assert p.lives == settings.PLAYER_START_LIVES + 1
-    # No duration/timer: lives never decay, no matter how long we tick.
+
+    # Mid-damage: restores exactly one segment.
+    p.health = 2
+    p.apply_powerup("health")
+    assert p.health == 3
+
+    # One below max: restores to max, never overheals.
+    p.health = settings.PLAYER_START_HEALTH - 1
+    p.apply_powerup("health")
+    assert p.health == settings.PLAYER_START_HEALTH
+
+    # At max: no change (capped).
+    p.apply_powerup("health")
+    assert p.health == settings.PLAYER_START_HEALTH
+
+
+def test_health_has_no_timer(game):
+    start_game(game)
+    p = game.player
+    p.health = 1
+    p.apply_powerup("health")
+    assert p.health == 2
+    # Nothing decays: health is unchanged no matter how long we tick.
     for _ in range(10 * settings.FPS):
         p.update_powerups(1.0 / settings.FPS)
-    assert p.lives == settings.PLAYER_START_LIVES + 1
-
-
-# ---------------------------------------------------------------------- #
-# Lives & respawn
-# ---------------------------------------------------------------------- #
-
-
-def test_dying_with_spare_life_respawns_and_continues_run(game):
-    start_game(game)
-    p = game.player
-    p.lives = 2
-    p.health = 1
-    assert p.take_hit() is True
-    assert p.dead
-    score0 = game.score
-
-    # The death explosion plays, then the spare life is burned: the ship
-    # respawns in place with full health and never leaves the "game" state.
-    pump(game, frames=100)
-    assert game.state == "game"
-    assert not p.dead
-    assert p.health == settings.PLAYER_START_HEALTH
-    assert p.lives == 1  # one spare consumed
-    assert p.invulnerable  # spawn protection
-    assert game.score == score0  # the run continues, score untouched
-    assert game.last_run_rank is None  # no leaderboard entry on a respawn
-
-
-def test_dying_with_last_life_is_game_over(game):
-    start_game(game)
-    p = game.player
-    assert p.lives == settings.PLAYER_START_LIVES  # default: 1
-    p.health = 1
-    assert p.take_hit() is True
-    pump(game, frames=100)
-    assert game.state == "game_over"
-    assert p.dead
+    assert p.health == 2
 
 
 # ---------------------------------------------------------------------- #
@@ -278,7 +320,6 @@ def test_powerup_hud_renders_while_active(game):
     p = game.player
     p.apply_powerup("shield")
     p.apply_powerup("rapid_fire")
-    p.lives = 3
     game._draw_game()  # shield aura + status rows must render without crashing
     assert p.shield_active
     assert p.rapid_fire_active

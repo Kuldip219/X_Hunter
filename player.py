@@ -25,11 +25,6 @@ class Player:
         # Speed is in px/second; per-frame displacement = speed * dt.
         self.speed = speed
         self.health = health
-        # Lives remaining including the current one: with the default of 1 a
-        # single death ends the run, exactly like the original game. An EXTRA
-        # LIFE power-up adds spare lives; dying with a spare burns one and
-        # respawns the ship (see respawn()).
-        self.lives = settings.PLAYER_START_LIVES
         self.dead = False
         self.explosion: Optional[Explosion] = None
         self.invulnerable_timer = 0.0
@@ -80,7 +75,7 @@ class Player:
 
     def update_powerups(self, dt: float) -> None:
         """Tick the timed power-up windows (shield / rapid fire) by real
-        time. Extra life has no timer, so it needs no update here."""
+        time. Health restoration has no timer, so it needs no update here."""
         if self.shield_timer > 0:
             self.shield_timer = self._tick_down(self.shield_timer, dt)
         if self.rapid_fire_timer > 0:
@@ -119,30 +114,17 @@ class Player:
 
         Shield and rapid fire set their (real-time) windows to the full
         duration - collecting another of the same kind while active simply
-        refreshes it, never stacks. Extra life adds one spare life with no
-        timer involved.
+        refreshes it, never stacks. Health restores exactly one health-bar
+        segment, capped at the maximum so it can never overheal - and it has
+        no timer involved.
         """
         if kind == settings.POWERUP_KIND_SHIELD:
             self.shield_timer = settings.POWERUP_SHIELD_DURATION_SECONDS
         elif kind == settings.POWERUP_KIND_RAPID_FIRE:
             self.rapid_fire_timer = settings.POWERUP_RAPID_FIRE_DURATION_SECONDS
-        elif kind == settings.POWERUP_KIND_LIFE:
-            self.lives += 1
+        elif kind == settings.POWERUP_KIND_HEALTH:
+            self.health = min(self.health + 1, settings.PLAYER_START_HEALTH)
         return kind
-
-    def respawn(self, x: float, y: float) -> None:
-        """Reset the ship after burning a spare life: full health, back at
-        the spawn point, with a short spawn-invulnerability window (visible
-        via the existing blink) so the player isn't instantly re-killed by
-        enemies still on the field. The death sequence is complete at this
-        point, so flipping dead back to False here is the H1-sanctioned
-        revival - it never happens during a fade-out."""
-        self.x = x
-        self.y = y
-        self.health = settings.PLAYER_START_HEALTH
-        self.dead = False
-        self.explosion = None
-        self.invulnerable_timer = settings.POWERUP_RESPAWN_INVULNERABLE_SECONDS
 
     def take_hit(self) -> bool:
         """

@@ -191,16 +191,16 @@ SFX_FILES: dict[str, str] = {
 
 # --- Power-ups --- #
 # Power-up kinds (string keys used across powerup.py, player.py, assets.py
-# and the HUD). EXTRA LIFE grants a spare life (lives +1, no timer); SHIELD
+# and the HUD). HEALTH restores one health-bar segment (no timer); SHIELD
 # grants temporary full invincibility; RAPID_FIRE temporarily boosts the
 # hold-to-fire cadence.
 POWERUP_KIND_SHIELD: str = "shield"
 POWERUP_KIND_RAPID_FIRE: str = "rapid_fire"
-POWERUP_KIND_LIFE: str = "life"
+POWERUP_KIND_HEALTH: str = "health"
 POWERUP_TYPES: tuple[str, str, str] = (
     POWERUP_KIND_SHIELD,
     POWERUP_KIND_RAPID_FIRE,
-    POWERUP_KIND_LIFE,
+    POWERUP_KIND_HEALTH,
 )
 
 # Power-ups only drop from destroyed enemies (never spawned freely on the
@@ -217,8 +217,16 @@ POWERUP_IMG_SIZE: tuple[int, int] = (40, 40)
 POWERUP_IMG_FILES: dict[str, str] = {
     POWERUP_KIND_SHIELD: "powerup_shield.png",
     POWERUP_KIND_RAPID_FIRE: "powerup_rapid.png",
-    POWERUP_KIND_LIFE: "powerup_life.png",
+    POWERUP_KIND_HEALTH: "powerup_health.png",
 }
+
+# The HEALTH power-up is a comeback item: it only becomes eligible to drop
+# once the player has lost at least 20% of their full health bar (health
+# strictly BELOW 80% of max). At full health or exactly 80% it is excluded
+# from the drop pool entirely, so it can never be farmed at high health.
+# Health is a segmented bar (PLAYER_START_HEALTH = 5 segments), so with the
+# default max this means health < 4.
+HEALTH_POWERUP_MIN_HEALTH_FRACTION: float = 0.8
 
 # Shield: full temporary invincibility for the duration. Unlike the post-hit
 # i-frame window (H2), the shield blocks even a would-be lethal hit - that
@@ -232,14 +240,6 @@ POWERUP_SHIELD_DURATION_SECONDS: float = 8.0
 # rather than stacking.
 POWERUP_RAPID_FIRE_DURATION_SECONDS: float = 8.0
 RAPID_FIRE_COOLDOWN_MULTIPLIER: float = 0.3
-
-# Lives: the player starts with PLAYER_START_LIVES = 1, so the very first
-# death still ends the run exactly as before. An EXTRA LIFE pickup adds one
-# spare life; dying with a spare burns it and respawns the player in place
-# with full health and a short spawn-invulnerability window (visible via
-# the existing blink).
-PLAYER_START_LIVES: int = 1
-POWERUP_RESPAWN_INVULNERABLE_SECONDS: float = 2.0
 
 # Power-up HUD + shield aura colors (cyan shield bubble, yellow rapid).
 SHIELD_AURA_COLOR: tuple[int, int, int] = (0, 220, 255)

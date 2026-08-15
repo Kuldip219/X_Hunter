@@ -282,6 +282,51 @@ CONTROLS (controls.png, new 1168×273 asset loaded via the same
 controls list vacated. Slider logic, persistence, and high_scores logic
 untouched.
 
+### 3.20 Power-up system (committed `c1252f1`) + health-regen pickup (uncommitted) — **140 tests**
+
+**Power-ups (committed in `c1252f1`):** shield, rapid fire, and (initially)
+extra life. They only drop from destroyed enemies (12% per kill,
+`POWERUP_DROP_CHANCE`, uniform kind), drift down at 120 px/s, auto-collect
+on contact with the player (no keypress), and despawn after an 8 s
+real-time lifetime. All timers are dt-based under the fixed-timestep
+simulation. Sprites: `shield_gold.png` + `bolt_gold.png` from Kenney
+"Space Shooter Redux" (CC0); pickup SFX `powerUp2.ogg` from Kenney
+"Digital Audio" (CC0, same pack as the existing SFX). Attribution in
+`Assets/SOURCES.md` + `Assets/LICENSE-kenney-CC0.txt`.
+
+- **Shield** (`POWERUP_SHIELD_DURATION_SECONDS = 8.0`): full invincibility
+  via a separate `shield_timer` on the player. Unlike the post-hit i-frame
+  window (H2), the shield blocks even lethal hits — checked in `take_hit()`
+  before the lethality check. Rendered as a translucent cyan aura around
+  the ship + a `SHIELD X.Xs` HUD countdown.
+- **Rapid fire** (`POWERUP_RAPID_FIRE_DURATION_SECONDS = 8.0`): the
+  hold-to-fire cooldown is multiplied by `RAPID_FIRE_COOLDOWN_MULTIPLIER =
+  0.3` (0.2 s → 0.06 s, ~16 shots/s) via `Player.fire_cooldown_value()`;
+  collecting another while active REFRESHES the window, never stacks.
+  Yellow `RAPID FIRE X.Xs` HUD countdown.
+- **Health-regen pickup (this change, replaces the interim extra life):**
+  the third kind is now HEALTH — a heart icon that restores exactly one
+  health-bar segment (the game uses a segmented 5-HP bar,
+  `PLAYER_START_HEALTH = 5`, rendered via `health_0..5.png`; there is no
+  lives system). It is gated as a comeback item: excluded from the drop
+  pool while `health >= PLAYER_START_HEALTH * 0.8` (i.e. ≥ 4/5 — at or
+  above 80% it never drops), and drops normally below that.
+  `Player.apply_powerup` clamps `health = min(health + 1, MAX)` so it can
+  never overheal, and it has no timer. The extra-life `lives` counter and
+  respawn-on-death mechanic were removed entirely (they existed only to
+  support the extra-life pickup; death → game_over is back to the original
+  single-death flow, H1 unchanged). Icon: `emote_heart.png` (Style 8,
+  standalone pixel heart) from Kenney "Emotes Pack" (CC0) — the Redux /
+  Remastered / UI / Game Icons packs contain no heart.
+
+**Preview fix (same session):** the autopilot (`preview_live.py`) drives
+`_update_and_draw` directly, which never clears the screen (`screen.fill`
+lives only in `Game.run()`), so frames accumulated permanent ghost trails
+and a burned-in damage flash. Added the missing per-frame
+`g.screen.fill(settings.BLACK)` mirroring `run()`; also killed a stale
+capture process from a previous session that was fighting the new one over
+frame.png.
+
 ## 5. Current repo state
 
 ```
@@ -303,15 +348,13 @@ a9e5b5b Initial commit
 ```
 
 - **Tracked files:** 72 (all source/assets/tests; +1 for `settings_store.py`).
-- **Tests:** 123 passing, 1 warning (the intentional mixer-failure test) in ~13 s.
-- **Uncommitted:** the delta-time conversion, fixed-timestep accumulator, the
-  high-score leaderboard, the Options-screen navigation change, and the new
-  Options volume/controls screen (`settings.py`, `player.py`, `enemy.py`,
-  `bullet.py`, `game.py`, `menus.py`, `assets.py`, `audio.py`, new
-  `highscores.py`, new `settings_store.py`, updated test files incl.
-  `tests/test_highscores.py`, `tests/test_options.py`, `tests/test_settings_store.py`).
-  Also note: `AUDIT.md` and `PROGRESS.md` were deleted in the working tree
-  outside this work (this file restores `PROGRESS.md`).
+- **Tests:** 140 passing, 1 warning (the intentional mixer-failure test) in ~17 s.
+- **Uncommitted:** the health-regen pickup change (`settings.py`, `player.py`,
+  `game.py`, `tests/test_powerups.py`, `Assets/SOURCES.md`, new
+  `Assets/powerup_health.png`, deleted `Assets/powerup_life.png`) and the
+  preview-autopilot screen-clear fix (`.freebuff/preview_live.py` — gitignored).
+  (Prior features — power-ups `c1252f1`, options/controls `fb4fd92`+`f7f033f`,
+  difficulty-pause `091fdf4` — are committed.)
 - **Live preview:** registered at `http://127.0.0.1:8123/frame.html` (headless
   autopilot streaming real game frames; see `.freebuff/run.md`).
 
