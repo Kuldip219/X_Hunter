@@ -2,11 +2,13 @@
 matter), enemy speed/count scaling through the real game loop, clean
 reset on restart, and no interference with the death-freeze (H1)."""
 
+import pytest
 import pygame
 
 import settings
 from difficulty import Difficulty
-from helpers import KeyState, start_game
+from enemy import Enemy
+from helpers import KeyState, pump_fade, start_game
 
 
 def test_difficulty_starts_at_zero():
@@ -136,3 +138,56 @@ def test_difficulty_frozen_while_dead(monkeypatch, game):
     game._update_game(KeyState())  # early-return: no difficulty scaling
     assert game.enemies[0].speed == settings.ENEMY_SPEED_PER_SEC
     assert len(game.enemies) == settings.INITIAL_ENEMY_COUNT
+
+
+def test_difficulty_clock_frozen_while_paused(monkeypatch, game):
+    """The elapsed-time half of the ramp must not advance while paused.
+
+    Mirrors the fixed-timestep accumulator: real wall time spent outside the
+    "game" state is banked (paused_ms) and subtracted from the difficulty
+    clock, so a 30 s pause adds zero seconds to the ramp, and the clock
+    resumes from where it froze once unpaused.
+    """
+    ticks = _freeze_ticks(monkeypatch)
+    start_game(game)
+    # Collision-free field so the long simulated run can't kill the player.
+    game.enemies = [Enemy(0, -2000) for _ in range(settings.INITIAL_ENEMY_COUNT)]
+    game.score = 0  # isolate the time half of the formula
+
+    def elapsed() -> float:
+        # The game computes elapsed identically inside _update_game.
+        return (ticks["t"] - game.run_start_ticks - game.paused_ms) / 1000.0
+
+    def run(seconds: float) -> None:
+        # Advance get_ticks in exact sync with the raw_dt passed to
+        # _advance_simulation (1000/FPS ms per 1/FPS s frame), so the clock
+        # and the accumulator bank precisely the same time.
+        for _ in range(int(round(seconds * settings.FPS))):
+            ticks["t"] += 1000.0 / settings.FPS
+            game._advance_simulation(1.0 / settings.FPS, KeyState())
+
+    # 10 s of gameplay: the clock runs and the ramp starts climbing.
+    run(10)
+    assert elapsed() == pytest.approx(10.0, abs=0.05)
+    speed_before = game.enemies[0].speed
+    assert speed_before > settings.ENEMY_SPEED_PER_SEC  # ramp has begun
+
+    # Pause (ESC) and let 30 s of real time pass while paused.
+    game._handle_keydown(pygame.K_ESCAPE)
+    pump_fade(game)
+    assert game.state == "pause"
+    for _ in range(30 * settings.FPS):
+        ticks["t"] += 1000.0 / settings.FPS
+        game._advance_simulation(1.0 / settings.FPS, KeyState())
+
+    # The clock did NOT advance during the pause.
+    assert elapsed() == pytest.approx(10.0, abs=0.05)
+
+    # Unpause (ESC): the clock resumes from where it froze, not from +30 s.
+    game._handle_keydown(pygame.K_ESCAPE)
+    pump_fade(game)
+    assert game.state == "game"
+    run(5)
+    assert elapsed() == pytest.approx(15.0, abs=0.05)
+    speed_after = game.enemies[0].speed
+    assert speed_after > speed_before  # ramp resumes climbing after unpause

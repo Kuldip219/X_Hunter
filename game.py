@@ -89,6 +89,10 @@ class Game:
         # Difficulty clock: elapsed survival time is measured from here, so a
         # restart always starts the ramp back at baseline (no carryover).
         self.run_start_ticks = pygame.time.get_ticks()
+        # Wall-clock time spent OUTSIDE the "game" state since this run
+        # started (pause/menus/game_over). Subtracted from the difficulty
+        # clock so it only measures in-game time; reset alongside the clock.
+        self.paused_ms = 0.0
         # A fresh run hasn't earned a leaderboard rank yet.
         self.last_run_rank = None
 
@@ -139,6 +143,12 @@ class Game:
         """
         if self.state != "game":
             self.accumulator = 0.0
+            # The difficulty clock mirrors the accumulator: it must only
+            # measure time spent in the "game" state. Bank every non-game
+            # rendered frame's full real duration (uncapped - all of it is
+            # paused/menu time) so elapsed survival time freezes during a
+            # pause and resumes exactly where it left off.
+            self.paused_ms += raw_dt * 1000.0
             return 0
 
         self.accumulator += min(raw_dt, settings.MAX_FRAME_DT)
@@ -357,7 +367,10 @@ class Game:
         # active enemy count off a single blended difficulty value. It runs
         # only while the player is alive - the dead-early-return above keeps
         # it fully frozen during the death sequence (H1 gating preserved).
-        elapsed = (pygame.time.get_ticks() - self.run_start_ticks) / 1000.0
+        # Difficulty clock: real wall time since the run started, minus the
+        # time banked outside "game" (see _advance_simulation) - so pausing
+        # freezes the elapsed-time half of the difficulty ramp.
+        elapsed = (pygame.time.get_ticks() - self.run_start_ticks - self.paused_ms) / 1000.0
         diff = self.difficulty.value(self.score, elapsed)
 
         enemy_speed = min(
