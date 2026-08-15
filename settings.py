@@ -186,7 +186,67 @@ SFX_FILES: dict[str, str] = {
     "player_death": "player_death.ogg",
     "menu_hover": "menu_hover.ogg",
     "menu_click": "menu_click.ogg",
+    "powerup": "powerup.ogg",
 }
+
+# --- Power-ups --- #
+# Power-up kinds (string keys used across powerup.py, player.py, assets.py
+# and the HUD). EXTRA LIFE grants a spare life (lives +1, no timer); SHIELD
+# grants temporary full invincibility; RAPID_FIRE temporarily boosts the
+# hold-to-fire cadence.
+POWERUP_KIND_SHIELD: str = "shield"
+POWERUP_KIND_RAPID_FIRE: str = "rapid_fire"
+POWERUP_KIND_LIFE: str = "life"
+POWERUP_TYPES: tuple[str, str, str] = (
+    POWERUP_KIND_SHIELD,
+    POWERUP_KIND_RAPID_FIRE,
+    POWERUP_KIND_LIFE,
+)
+
+# Power-ups only drop from destroyed enemies (never spawned freely on the
+# field). Drop chance is 12% per kill - common enough to matter, rare
+# enough that the difficulty ramp stays meaningful. They drift down at
+# POWERUP_FALL_SPEED_PER_SEC and despawn after POWERUP_LIFETIME_SECONDS
+# (both real time, ticked by dt) if the player never touches them.
+POWERUP_DROP_CHANCE: float = 0.12
+POWERUP_FALL_SPEED_PER_SEC: int = 120
+POWERUP_LIFETIME_SECONDS: float = 8.0
+# Uniform drop icons scaled to this footprint (kept centered on the drop
+# point, matching how the enemy sprite was centered on its hitbox).
+POWERUP_IMG_SIZE: tuple[int, int] = (40, 40)
+POWERUP_IMG_FILES: dict[str, str] = {
+    POWERUP_KIND_SHIELD: "powerup_shield.png",
+    POWERUP_KIND_RAPID_FIRE: "powerup_rapid.png",
+    POWERUP_KIND_LIFE: "powerup_life.png",
+}
+
+# Shield: full temporary invincibility for the duration. Unlike the post-hit
+# i-frame window (H2), the shield blocks even a would-be lethal hit - that
+# is the entire point of picking it up. It is time-based, never consumed by
+# a single hit.
+POWERUP_SHIELD_DURATION_SECONDS: float = 8.0
+
+# Rapid fire: while active, the hold-to-fire cooldown is multiplied by
+# RAPID_FIRE_COOLDOWN_MULTIPLIER (0.2 s -> 0.06 s, ~16 shots/s). Collecting
+# another rapid-fire pickup while one is active refreshes the duration
+# rather than stacking.
+POWERUP_RAPID_FIRE_DURATION_SECONDS: float = 8.0
+RAPID_FIRE_COOLDOWN_MULTIPLIER: float = 0.3
+
+# Lives: the player starts with PLAYER_START_LIVES = 1, so the very first
+# death still ends the run exactly as before. An EXTRA LIFE pickup adds one
+# spare life; dying with a spare burns it and respawns the player in place
+# with full health and a short spawn-invulnerability window (visible via
+# the existing blink).
+PLAYER_START_LIVES: int = 1
+POWERUP_RESPAWN_INVULNERABLE_SECONDS: float = 2.0
+
+# Power-up HUD + shield aura colors (cyan shield bubble, yellow rapid).
+SHIELD_AURA_COLOR: tuple[int, int, int] = (0, 220, 255)
+RAPID_FIRE_COLOR: tuple[int, int, int] = (255, 220, 0)
+POWERUP_STATUS_X: int = 10
+POWERUP_STATUS_Y: int = 135
+POWERUP_STATUS_ROW_GAP: int = 30
 
 # --- Effects ---
 SHAKE_STRENGTH: int = 8

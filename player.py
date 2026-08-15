@@ -25,10 +25,18 @@ class Player:
         # Speed is in px/second; per-frame displacement = speed * dt.
         self.speed = speed
         self.health = health
+        # Lives remaining including the current one: with the default of 1 a
+        # single death ends the run, exactly like the original game. An EXTRA
+        # LIFE power-up adds spare lives; dying with a spare burns one and
+        # respawns the ship (see respawn()).
+        self.lives = settings.PLAYER_START_LIVES
         self.dead = False
         self.explosion: Optional[Explosion] = None
         self.invulnerable_timer = 0.0
         self.fire_cooldown = 0.0
+        # Timed power-up windows (seconds, real time, ticked by update_powerups).
+        self.shield_timer = 0.0
+        self.rapid_fire_timer = 0.0
 
     def handle_input(self, keys: Sequence[bool], dt: float) -> None:
         """Move left/right based on currently-held keys. No-op while dead.
@@ -70,6 +78,14 @@ class Player:
         if self.fire_cooldown > 0:
             self.fire_cooldown = self._tick_down(self.fire_cooldown, dt)
 
+    def update_powerups(self, dt: float) -> None:
+        """Tick the timed power-up windows (shield / rapid fire) by real
+        time. Extra life has no timer, so it needs no update here."""
+        if self.shield_timer > 0:
+            self.shield_timer = self._tick_down(self.shield_timer, dt)
+        if self.rapid_fire_timer > 0:
+            self.rapid_fire_timer = self._tick_down(self.rapid_fire_timer, dt)
+
     @property
     def can_fire(self) -> bool:
         """True when the fire cooldown has elapsed and a shot may be fired."""
@@ -79,6 +95,54 @@ class Player:
     def invulnerable(self) -> bool:
         """True while the post-hit i-frame window is active."""
         return self.invulnerable_timer > 0.0
+
+    @property
+    def shield_active(self) -> bool:
+        """True while the SHIELD power-up is up (blocks ALL damage)."""
+        return self.shield_timer > 0.0
+
+    @property
+    def rapid_fire_active(self) -> bool:
+        """True while the RAPID FIRE power-up is up."""
+        return self.rapid_fire_timer > 0.0
+
+    def fire_cooldown_value(self) -> float:
+        """The hold-to-fire cooldown for the next shot: the base value, or
+        the rapid-fire value while that power-up is active."""
+        cooldown = settings.PLAYER_FIRE_COOLDOWN_SECONDS
+        if self.rapid_fire_active:
+            cooldown *= settings.RAPID_FIRE_COOLDOWN_MULTIPLIER
+        return cooldown
+
+    def apply_powerup(self, kind: str) -> str:
+        """Apply a picked-up power-up effect. Returns the kind applied.
+
+        Shield and rapid fire set their (real-time) windows to the full
+        duration - collecting another of the same kind while active simply
+        refreshes it, never stacks. Extra life adds one spare life with no
+        timer involved.
+        """
+        if kind == settings.POWERUP_KIND_SHIELD:
+            self.shield_timer = settings.POWERUP_SHIELD_DURATION_SECONDS
+        elif kind == settings.POWERUP_KIND_RAPID_FIRE:
+            self.rapid_fire_timer = settings.POWERUP_RAPID_FIRE_DURATION_SECONDS
+        elif kind == settings.POWERUP_KIND_LIFE:
+            self.lives += 1
+        return kind
+
+    def respawn(self, x: float, y: float) -> None:
+        """Reset the ship after burning a spare life: full health, back at
+        the spawn point, with a short spawn-invulnerability window (visible
+        via the existing blink) so the player isn't instantly re-killed by
+        enemies still on the field. The death sequence is complete at this
+        point, so flipping dead back to False here is the H1-sanctioned
+        revival - it never happens during a fade-out."""
+        self.x = x
+        self.y = y
+        self.health = settings.PLAYER_START_HEALTH
+        self.dead = False
+        self.explosion = None
+        self.invulnerable_timer = settings.POWERUP_RESPAWN_INVULNERABLE_SECONDS
 
     def take_hit(self) -> bool:
         """
@@ -95,6 +159,13 @@ class Player:
         # A dead player cannot be hit again: the death sequence must never
         # re-trigger, no matter who calls take_hit.
         if self.dead:
+            return False
+
+        # The SHIELD power-up grants full invincibility: it blocks every hit,
+        # including a would-be lethal one, for its whole duration. Unlike the
+        # post-hit i-frame window (H2), the shield is never bypassed by a
+        # killing blow - that is the point of picking it up.
+        if self.shield_active:
             return False
 
         # A lethal hit always lands, regardless of the invulnerability state.

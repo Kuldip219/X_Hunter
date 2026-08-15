@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import random
+
 import pygame
 
 import settings
@@ -15,6 +17,7 @@ from explosion import Explosion
 from highscores import HighScoreTable
 from menus import ControlsScreen, GameOverMenu, HighScoresMenu, MainMenu, OptionsScreen, PauseMenu
 from player import Player
+from powerup import PowerUp
 from settings_store import UserSettings
 
 
@@ -82,6 +85,8 @@ class Game:
         self.enemies = [
             Enemy.spawn_initial(settings.WIDTH) for _ in range(settings.INITIAL_ENEMY_COUNT)
         ]
+        # Power-ups dropped by destroyed enemies (cleared on every restart).
+        self.powerups = []
         self.score = 0
         self.screen_shake.timer = 0
         self.damage_flash.timer = 0
@@ -352,16 +357,19 @@ class Game:
 
         self.player.update_invulnerability(dt)
         self.player.update_fire_cooldown(dt)
+        self.player.update_powerups(dt)
         self.player.handle_input(keys, dt)
         self.player.clamp_to_screen(settings.WIDTH)
 
         # Hold-to-fire: while Space is held, fire once per cooldown window.
         # The dead-early-return above freezes all of gameplay, so this can
-        # never fire during the death sequence (H1 gating preserved).
+        # never fire during the death sequence (H1 gating preserved). While
+        # RAPID FIRE is active the cooldown is shorter (see
+        # Player.fire_cooldown_value) - a refreshed pickup never stacks.
         if keys[pygame.K_SPACE] and self.player.can_fire and not self.player.dead:
             self.bullets.append(self.player.spawn_bullet())
             self.audio.play("shoot")
-            self.player.fire_cooldown = settings.PLAYER_FIRE_COOLDOWN_SECONDS
+            self.player.fire_cooldown = self.player.fire_cooldown_value()
 
         # Difficulty ramp (invisible, smooth): scale enemy speed and the
         # active enemy count off a single blended difficulty value. It runs
@@ -412,6 +420,18 @@ class Game:
             if enemy.is_off_screen(settings.HEIGHT):
                 enemy.respawn(settings.WIDTH)
 
+        # Power-ups drift down and are auto-collected on contact with the
+        # player - no keypress needed, same style as every other collision
+        # check. They despawn after their real-time lifetime (or off-screen).
+        for powerup in self.powerups[:]:
+            powerup.update(dt)
+            if powerup.expired(settings.HEIGHT):
+                self.powerups.remove(powerup)
+            elif powerup.get_rect().colliderect(self.player.get_rect()):
+                self.player.apply_powerup(powerup.kind)
+                self.audio.play("powerup")
+                self.powerups.remove(powerup)
+
         for bullet in self.bullets[:]:
             for enemy in self.enemies:
                 if enemy.get_rect().colliderect(bullet.get_rect()):
@@ -421,6 +441,11 @@ class Game:
                     )
                     if bullet in self.bullets:
                         self.bullets.remove(bullet)
+                    # A defeated enemy may drop a power-up at its position
+                    # (roll against the configured drop chance, uniform kind).
+                    if random.random() < settings.POWERUP_DROP_CHANCE:
+                        kind = random.choice(settings.POWERUP_TYPES)
+                        self.powerups.append(PowerUp(kind, enemy.x, enemy.y))
                     enemy.respawn(settings.WIDTH)
                     self.score += 1
                     break
@@ -445,6 +470,17 @@ class Game:
 
         ui.draw_health_bar(self.screen, self.assets.health_images, self.player.health)
 
+        for powerup in self.powerups:
+            self.screen.blit(
+                self.assets.powerup_images[powerup.kind],
+                (powerup.x + self.shake_offset[0], powerup.y + self.shake_offset[1]),
+            )
+
+        if self.player.shield_active and not self.player.dead:
+            self._draw_shield_aura()
+
+        self._draw_powerup_status()
+
         self.damage_flash.draw(self.screen)
 
         for explosion in self.explosions[:]:
@@ -460,16 +496,59 @@ class Game:
                 self.player.explosion.draw(self.screen, self.assets.explosion_frames)
                 self.player.explosion.advance()
             elif not self.fade.fading_out:
-                # Start the fade to game-over exactly once. The player stays
-                # dead (never flips back to False), so gameplay remains frozen
-                # until the fade completes and the state switches to
-                # "game_over" - no revival, no re-hits during the fade-out.
-                self.fade.start("game_over")
-                self.player.explosion = None
-                # Record the final score on the persistent leaderboard right
-                # here, once per run: the score is final (gameplay is frozen)
-                # and writing a tiny JSON file is effectively instant and
-                # failure-tolerant, so this never delays the fade transition.
-                self.last_run_rank = self.high_scores.add(self.score)
+                if self.player.lives > 1:
+                    # A spare life (an EXTRA LIFE power-up) is banked: burn
+                    # one and respawn the ship in place with full health and
+                    # a short spawn-invulnerability window, keeping the run
+                    # (and score/difficulty) going. The death sequence is
+                    # complete here, so this revival never happens mid-fade.
+                    self.player.lives -= 1
+                    self.player.respawn(settings.WIDTH // 2, settings.HEIGHT - 80)
+                    self.audio.play_music()
+                else:
+                    # Start the fade to game-over exactly once. The player
+                    # stays dead (never flips back to False), so gameplay
+                    # remains frozen until the fade completes and the state
+                    # switches to "game_over" - no revival, no re-hits during
+                    # the fade-out (H1).
+                    self.fade.start("game_over")
+                    self.player.explosion = None
+                    # Record the final score on the persistent leaderboard
+                    # right here, once per run: the score is final (gameplay
+                    # is frozen) and writing a tiny JSON file is effectively
+                    # instant and failure-tolerant, so this never delays the
+                    # fade transition.
+                    self.last_run_rank = self.high_scores.add(self.score)
 
         ui.draw_score(self.screen, self.assets.font, self.score)
+
+    def _draw_shield_aura(self) -> None:
+        """A translucent cyan bubble around the ship while the shield is up,
+        matching the player's position including the screen-shake offset."""
+        center = (
+            self.player.x + self.player.width // 2 + self.shake_offset[0],
+            self.player.y + self.player.height // 2 + self.shake_offset[1],
+        )
+        radius = max(self.player.width, self.player.height) // 2 + 14
+        aura = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+        pygame.draw.circle(aura, (*settings.SHIELD_AURA_COLOR, 60), (radius, radius), radius)
+        pygame.draw.circle(aura, (*settings.SHIELD_AURA_COLOR, 220), (radius, radius), radius, 3)
+        self.screen.blit(aura, (center[0] - radius, center[1] - radius))
+
+    def _draw_powerup_status(self) -> None:
+        """In-game HUD: timed power-up windows with their remaining time, and
+        the spare-life count once it differs from the starting value. Drawn
+        top-left under the health bar; empty by default so the normal HUD is
+        unchanged."""
+        rows = []
+        if self.player.shield_active:
+            rows.append((f"SHIELD {self.player.shield_timer:.1f}s", settings.SHIELD_AURA_COLOR))
+        if self.player.rapid_fire_active:
+            rows.append((f"RAPID FIRE {self.player.rapid_fire_timer:.1f}s", settings.RAPID_FIRE_COLOR))
+        if self.player.lives > settings.PLAYER_START_LIVES:
+            rows.append((f"LIVES: {self.player.lives}", settings.WHITE))
+        y = settings.POWERUP_STATUS_Y
+        for text, color in rows:
+            label = self.assets.font.render(text, True, color)
+            self.screen.blit(label, (settings.POWERUP_STATUS_X, y))
+            y += settings.POWERUP_STATUS_ROW_GAP

@@ -24,6 +24,7 @@ class Assets:
 
     health_images: list[pygame.Surface] = field(default_factory=list)
     explosion_frames: list[pygame.Surface] = field(default_factory=list)
+    powerup_images: dict[str, pygame.Surface] = field(default_factory=dict)
 
     title_img: pygame.Surface = None
     play_img: pygame.Surface = None
@@ -101,6 +102,11 @@ class Assets:
         quit_gameover_img = pygame.transform.scale(
             pygame.image.load(resource_path("Assets/quitt.png")), settings.QUIT_GAMEOVER_IMG_SIZE
         )
+        powerup_images = {}
+        for kind, filename in settings.POWERUP_IMG_FILES.items():
+            img = pygame.image.load(resource_path(f"Assets/{filename}"))
+            powerup_images[kind] = pygame.transform.scale(img, settings.POWERUP_IMG_SIZE)
+
         score_img = _load_menu_banner("Assets/score.png", settings.SCORE_IMG_SIZE, font, "HIGH SCORES")
         back_img = _load_menu_banner("Assets/back.png", settings.BACK_IMG_SIZE, font, "BACK")
         controls_img = _load_menu_banner("Assets/controls.png", settings.CONTROLS_IMG_SIZE, font, "CONTROLS")
@@ -113,6 +119,7 @@ class Assets:
             bullet_img=bullet_img,
             health_images=health_images,
             explosion_frames=explosion_frames,
+            powerup_images=powerup_images,
             title_img=title_img,
             play_img=play_img,
             options_img=options_img,

@@ -26,6 +26,7 @@ def test_all_sfx_and_music_loaded_with_dummy_driver(game):
             "player_death",
             "menu_hover",
             "menu_click",
+            "powerup",
         }
         assert game.audio.music_loaded
 
