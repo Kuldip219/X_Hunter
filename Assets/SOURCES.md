@@ -1,33 +1,27 @@
-# Sprite sources & licenses
+# Assets / Sprite Attribution
 
-## Power-up sprites — Kenney.nl (CC0 1.0)
+## Power-up icons (user-provided)
 
-The power-up icons come from two **Kenney.nl** packs by
-**Kenney Vleugels**, both licensed **Creative Commons Zero (CC0 1.0)** —
-public domain. They may be used in personal and commercial projects;
-crediting Kenney (www.kenney.nl) is appreciated but not required.
+The three power-up icon sprites (`bolt.png`, `heart.png`, `sheild.png`) are
+the project creator's original artwork. No attribution is required.
 
-- License: https://creativecommons.org/publicdomain/zero/1.0/
-- Pack license texts: `LICENSE-kenney-CC0.txt` in this folder (identical
-  CC0 terms shipped with every pack).
+## Kenney — Space Shooter Redux (CC0)
 
-### Shield & rapid fire — "Space Shooter Redux"
+Source: https://kenney.nl/assets/space-shooter-redux
+License: CC0 1.0 Universal (Public Domain)
+Full license text: LICENSE-kenney-CC0.txt
 
-| Game file | Original file (in the pack) | Used for | Pack page |
-|---|---|---|---|
-| `powerup_shield.png` | `PNG/Power-ups/shield_gold.png` | SHIELD power-up icon | https://kenney.nl/assets/space-shooter-redux |
-| `powerup_rapid.png` | `PNG/Power-ups/bolt_gold.png` | RAPID FIRE power-up icon | https://kenney.nl/assets/space-shooter-redux |
+| Local file | Original file | Used for |
+|---|---|---|
+| `powerup_rapid.png` | `PNG/Power-ups/bolt_gold.png` | RAPID FIRE power-up icon (replaced by user's `bolt.png`) |
+| `powerup_shield.png` | `PNG/Power-ups/shield_gold.png` | SHIELD power-up icon (replaced by user's `sheild.png`) |
 
-### Health — "Emotes Pack"
+## Kenney — Emotes Pack (CC0)
 
-The Redux/Remastered shooter packs contain no heart icon, so the HEALTH
-power-up icon comes from Kenney's **Emotes Pack** instead.
+Source: https://kenney.nl/assets/emotes-pack
+License: CC0 1.0 Universal (Public Domain)
+Full license text: LICENSE-kenney-CC0.txt
 
-| Game file | Original file (in the pack) | Used for | Pack page |
-|---|---|---|---|
-| `powerup_health.png` | `PNG/Pixel/Style 8/emote_heart.png` | HEALTH power-up icon (the standalone pixel heart, no speech bubble) | https://kenney.nl/assets/emotes-pack |
-
-These are loaded in `assets.py` (via `settings.POWERUP_IMG_FILES`) and
-scaled to the `settings.POWERUP_IMG_SIZE` footprint. The same attribution
-convention used for the audio assets (`Assets/audio/SOURCES.md` +
-`Assets/audio/LICENSE-kenney-CC0.txt`) is mirrored here.
+| Local file | Original file | Used for |
+|---|---|---|
+| `powerup_health.png` | `PNG/Pixel/Style 8/emote_heart.png` | HEALTH power-up icon (replaced by user's `heart.png`) |

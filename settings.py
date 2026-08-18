@@ -215,9 +215,9 @@ POWERUP_LIFETIME_SECONDS: float = 8.0
 # point, matching how the enemy sprite was centered on its hitbox).
 POWERUP_IMG_SIZE: tuple[int, int] = (40, 40)
 POWERUP_IMG_FILES: dict[str, str] = {
-    POWERUP_KIND_SHIELD: "powerup_shield.png",
-    POWERUP_KIND_RAPID_FIRE: "powerup_rapid.png",
-    POWERUP_KIND_HEALTH: "powerup_health.png",
+    POWERUP_KIND_SHIELD: "sheild.png",
+    POWERUP_KIND_RAPID_FIRE: "bolt.png",
+    POWERUP_KIND_HEALTH: "heart.png",
 }
 
 # The HEALTH power-up is a comeback item: it only becomes eligible to drop
