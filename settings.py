@@ -209,11 +209,16 @@ POWERUP_TYPES: tuple[str, str, str] = (
 # POWERUP_FALL_SPEED_PER_SEC and despawn after POWERUP_LIFETIME_SECONDS
 # (both real time, ticked by dt) if the player never touches them.
 POWERUP_DROP_CHANCE: float = 0.12
-POWERUP_FALL_SPEED_PER_SEC: int = 120
+POWERUP_FALL_SPEED_PER_SEC: int = 250
 POWERUP_LIFETIME_SECONDS: float = 8.0
 # Uniform drop icons scaled to this footprint (kept centered on the drop
 # point, matching how the enemy sprite was centered on its hitbox).
 POWERUP_IMG_SIZE: tuple[int, int] = (40, 40)
+# Visible content size after cropping transparent padding. Each icon is
+# cropped to its non-transparent bounding rect then scaled to this size
+# and centered on a POWERUP_IMG_SIZE surface, so all three appear the
+# same visual size regardless of how much padding their source art has.
+POWERUP_VISIBLE_SIZE: tuple[int, int] = (28, 28)
 POWERUP_IMG_FILES: dict[str, str] = {
     POWERUP_KIND_SHIELD: "sheild.png",
     POWERUP_KIND_RAPID_FIRE: "bolt.png",

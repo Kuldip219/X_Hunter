@@ -104,8 +104,20 @@ class Assets:
         )
         powerup_images = {}
         for kind, filename in settings.POWERUP_IMG_FILES.items():
-            img = pygame.image.load(resource_path(f"Assets/{filename}"))
-            powerup_images[kind] = pygame.transform.scale(img, settings.POWERUP_IMG_SIZE)
+            raw = pygame.image.load(resource_path(f"Assets/{filename}")).convert_alpha()
+            # Crop to the non-transparent bounding rect so different
+            # amounts of transparent padding don't cause visual size
+            # mismatches, then scale the cropped content to a uniform
+            # POWERUP_VISIBLE_SIZE and center it on a POWERUP_IMG_SIZE
+            # surface (the hitbox stays POWERUP_IMG_SIZE).
+            content = raw.subsurface(raw.get_bounding_rect())
+            vis = settings.POWERUP_VISIBLE_SIZE
+            scaled = pygame.transform.smoothscale(content, vis)
+            surf = pygame.Surface(settings.POWERUP_IMG_SIZE, pygame.SRCALPHA)
+            ox = (settings.POWERUP_IMG_SIZE[0] - vis[0]) // 2
+            oy = (settings.POWERUP_IMG_SIZE[1] - vis[1]) // 2
+            surf.blit(scaled, (ox, oy))
+            powerup_images[kind] = surf
 
         score_img = _load_menu_banner("Assets/score.png", settings.SCORE_IMG_SIZE, font, "HIGH SCORES")
         back_img = _load_menu_banner("Assets/back.png", settings.BACK_IMG_SIZE, font, "BACK")

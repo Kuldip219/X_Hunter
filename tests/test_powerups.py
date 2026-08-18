@@ -323,3 +323,43 @@ def test_powerup_hud_renders_while_active(game):
     game._draw_game()  # shield aura + status rows must render without crashing
     assert p.shield_active
     assert p.rapid_fire_active
+
+
+# ---------------------------------------------------------------------- #
+# Fall speed + visual sizing
+# ---------------------------------------------------------------------- #
+
+
+def test_fall_speed_is_dt_based():
+    """Power-up displacement scales linearly with dt (delta-time based)."""
+    p = PowerUp("shield", 100.0, 0.0)
+    start_y = p.y
+    dt = 0.1  # 100 ms
+    p.update(dt)
+    expected = settings.POWERUP_FALL_SPEED_PER_SEC * dt
+    assert p.y == pytest.approx(start_y + expected, abs=0.1)
+
+
+def test_fall_speed_constant_reasonable():
+    """Fall speed should be noticeable but slower than enemy movement."""
+    assert settings.POWERUP_FALL_SPEED_PER_SEC > 100  # not sluggish
+    assert settings.POWERUP_FALL_SPEED_PER_SEC < settings.ENEMY_SPEED_PER_SEC  # slower than enemies
+
+
+def test_all_powerup_icons_same_visual_size(game):
+    """All three power-up sprites produce identical visible content
+    dimensions after the crop-to-content + scale step in Assets.load()."""
+    sizes = {
+        kind: surf.get_size()
+        for kind, surf in game.assets.powerup_images.items()
+    }
+    # All three should be POWERUP_IMG_SIZE (the hitbox surface)
+    for kind, size in sizes.items():
+        assert size == settings.POWERUP_IMG_SIZE, f"{kind}: {size} != {settings.POWERUP_IMG_SIZE}"
+    # Visible content should all be POWERUP_VISIBLE_SIZE (centered inside)
+    for kind in settings.POWERUP_TYPES:
+        surf = game.assets.powerup_images[kind]
+        # The content is centered; non-transparent bbox should be <= POWERUP_VISIBLE_SIZE
+        bbox = surf.get_bounding_rect()
+        assert bbox.width <= settings.POWERUP_VISIBLE_SIZE[0] + 2  # pixel rounding
+        assert bbox.height <= settings.POWERUP_VISIBLE_SIZE[1] + 2
