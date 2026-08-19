@@ -40,10 +40,13 @@ class RunEntry:
 
 
 def _sort_key(entry: RunEntry) -> tuple[int, float]:
-    """"Finished" (0) ranks above "Dead" (1); within each group, shorter
-    time ranks first (ascending)."""
-    result_penalty = 0 if entry.result == "Finished" else 1
-    return (result_penalty, entry.time_seconds)
+    """"Finished" (0) ranks above "Dead" (1).  Within Finished, shorter
+    time ranks first (ascending — fastest clear is best).  Within Dead,
+    longer time ranks first (descending — surviving longer is better)."""
+    if entry.result == "Finished":
+        return (0, entry.time_seconds)
+    # Dead: negate so ascending sort produces descending time order.
+    return (1, -entry.time_seconds)
 
 
 class HighScoreTable:

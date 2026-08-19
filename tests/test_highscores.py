@@ -42,11 +42,12 @@ def test_qualifying_run_inserted_in_sorted_position(tmp_path):
         tmp_path / "hs.json",
         [(30.0, "Dead"), (45.0, "Dead"), (60.0, "Dead"), (90.0, "Dead"), (120.0, "Dead")],
     )
-    # A 50s Dead run should land between 45 and 60.
+    # Dead entries sorted descending: 120, 90, 60, 45, 30.
+    # A 50s Dead run lands between 60 and 45.
     rank = table.add(50.0, result="Dead", timestamp=99.0)
-    assert rank == 2  # 30, 45, 50, 60, 90, 120
+    assert rank == 3  # 120, 90, 60, 50, 45, 30
     times = [e.time_seconds for e in table.entries]
-    assert times == [30.0, 45.0, 50.0, 60.0, 90.0, 120.0]
+    assert times == [120.0, 90.0, 60.0, 50.0, 45.0, 30.0]
 
 
 def test_finished_ranks_above_dead(tmp_path):
@@ -59,35 +60,48 @@ def test_finished_ranks_above_dead(tmp_path):
     assert rank == 0  # Finished 50s is best
     results = [e.result for e in table.entries]
     assert results[0] == "Finished"
-    # Remaining Dead entries sorted by time ascending.
-    assert [e.time_seconds for e in table.entries[1:]] == [30.0, 45.0, 60.0]
+    # Remaining Dead entries sorted by time DESCENDING (longest survival first).
+    assert [e.time_seconds for e in table.entries[1:]] == [60.0, 45.0, 30.0]
 
 
-def test_dead_sorted_by_time_ascending(tmp_path):
+def test_dead_sorted_by_survival_descending(tmp_path):
+    """Longer survival ranks above shorter within the Dead group."""
     table = _make_table(
         tmp_path / "hs.json",
-        [(60.0, "Dead"), (30.0, "Dead"), (90.0, "Dead")],
+        [(30.0, "Dead"), (90.0, "Dead"), (60.0, "Dead")],
     )
     times = [e.time_seconds for e in table.entries]
-    assert times == [30.0, 60.0, 90.0]
+    assert times == [90.0, 60.0, 30.0]  # longest first
+
+
+def test_two_dead_longer_survival_ranks_first(tmp_path):
+    """Directly catches the bug: two Dead entries, the longer-survival
+    one must rank above the shorter one."""
+    table = _make_table(
+        tmp_path / "hs.json",
+        [(15.0, "Dead"), (45.0, "Dead")],
+    )
+    times = [e.time_seconds for e in table.entries]
+    assert times == [45.0, 15.0]  # 45s survival > 15s survival
 
 
 def test_non_qualifying_run_not_inserted(tmp_path):
-    # Fill with 10 Dead runs (shortest first).
+    # Fill with 10 Dead runs (10s-100s survival). Sorted descending,
+    # worst is 10s (shortest survival).
     runs = [(float(i * 10), "Dead") for i in range(10, 0, -1)]
     table = _make_table(tmp_path / "hs.json", runs)
     assert len(table.entries) == 10
-    # A 200s Dead run is worse than all 10 existing entries.
-    assert table.qualifies(200.0, "Dead") is False
-    assert table.add(200.0, result="Dead") is None
+    # A 5s Dead run has shorter survival than all 10 — doesn't qualify.
+    assert table.qualifies(5.0, "Dead") is False
+    assert table.add(5.0, result="Dead") is None
     assert len(table.entries) == 10
 
 
 def test_tie_at_last_place_does_not_qualify(tmp_path):
     runs = [(float(i * 10), "Dead") for i in range(10, 0, -1)]
     table = _make_table(tmp_path / "hs.json", runs)
-    # Last place is 100.0s Dead. A 100.0s Dead is a tie — doesn't qualify.
-    assert table.qualifies(100.0, "Dead") is False
+    # Sorted descending: last place is 10s. A 10s Dead is a tie — doesn't qualify.
+    assert table.qualifies(10.0, "Dead") is False
 
 
 def test_trimmed_to_ten_entries(tmp_path):
@@ -98,8 +112,8 @@ def test_trimmed_to_ten_entries(tmp_path):
     rank = table.add(5.0, result="Finished", timestamp=999.0)
     assert rank == 0
     assert len(table.entries) == settings.HIGHSCORE_MAX == 10
-    # The slowest Dead (100s) was dropped.
-    assert table.entries[-1].time_seconds == 90.0
+    # The shortest survival (10s) was dropped; last remaining Dead is 20s.
+    assert table.entries[-1].time_seconds == 20.0
 
 
 def test_multiple_finished_sorted_by_time(tmp_path):
@@ -121,7 +135,8 @@ def test_persistence_survives_restart(tmp_path):
     table = _make_table(path, [(30.0, "Dead"), (10.0, "Dead"), (20.0, "Dead")])
     fresh = HighScoreTable.load(str(path))
     times = [e.time_seconds for e in fresh.entries]
-    assert times == [10.0, 20.0, 30.0]
+    # Dead entries sorted descending (longest survival first).
+    assert times == [30.0, 20.0, 10.0]
 
 
 def test_missing_file_loads_empty(tmp_path):
@@ -256,14 +271,15 @@ def test_dead_entry_recorded_on_game_over(game):
 
 
 def test_non_qualifying_run_not_recorded(game):
-    # Pre-fill with 10 fast Dead runs (1-10 seconds).
+    # Pre-fill with 10 Dead runs (1-10 seconds survival).
     for i in range(10):
         game.high_scores.add(float(i + 1), result="Dead", timestamp=float(i))
     assert len(game.high_scores.entries) == 10
 
-    # Set the run timer to a slow value that won't beat the 10th place.
+    # Set the run timer to a very short value (0.5s) — shorter survival
+    # than the worst entry (1s) — so it doesn't qualify.
     start_game(game)
-    game.run_timer = 200.0
+    game.run_timer = 0.5
     game.player.health = 1
     assert game.player.take_hit() is True
     assert game.player.dead
