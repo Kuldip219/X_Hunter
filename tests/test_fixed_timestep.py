@@ -31,6 +31,10 @@ def _parked_field(game, speed: float = 50.0):
     p.speed = speed  # keep total displacement below the screen edge
     p.x, p.y = 100, 600
     game.bullets = []
+    # Clear the "Phase N" intro fade text that reset_game() creates,
+    # so the accumulator can run simulation steps in tests.
+    game.fade_text.active = False
+    game._level_intro_pending = False
     return p
 
 

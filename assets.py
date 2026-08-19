@@ -9,8 +9,42 @@ is called - exactly matching the original script's order of operations.
 from __future__ import annotations
 from dataclasses import dataclass, field
 from resource_path import resource_path
+import numpy as np
 import pygame
 import settings
+
+
+def _content_crop(surf: pygame.Surface) -> pygame.Rect:
+    """Return the bounding rect of the largest contiguous block of opaque
+    pixels in *surf*.  Simple ``get_bounding_rect()`` fails on sprites with
+    stray corner pixels (e.g. sheild.png has isolated opaque pixels at two
+    opposite corners that span the full canvas).  This helper finds the
+    main icon content by identifying the longest uninterrupted run of
+    rows/columns that each contain at least one opaque pixel.
+    """
+    alpha = pygame.surfarray.pixels_alpha(surf)
+    opaque_per_row = np.sum(alpha > 128, axis=1)  # type: ignore[no-untyped-call]
+    opaque_per_col = np.sum(alpha > 128, axis=0)  # type: ignore[no-untyped-call]
+
+    def _longest_run(mask: np.ndarray) -> tuple[int, int]:  # type: ignore[type-arg]
+        runs: list[tuple[int, int, int]] = []
+        start: int | None = None
+        for i, v in enumerate(mask):
+            if v and start is None:
+                start = i
+            elif not v and start is not None:
+                runs.append((start, i - 1, i - start))
+                start = None
+        if start is not None:
+            runs.append((start, len(mask) - 1, len(mask) - start))
+        if not runs:
+            return (0, 0)
+        best = max(runs, key=lambda r: r[2])
+        return (best[0], best[1])
+
+    y0, y1 = _longest_run(opaque_per_row > 0)
+    x0, x1 = _longest_run(opaque_per_col > 0)
+    return pygame.Rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
 
 
 @dataclass
@@ -105,17 +139,22 @@ class Assets:
         powerup_images = {}
         for kind, filename in settings.POWERUP_IMG_FILES.items():
             raw = pygame.image.load(resource_path(f"Assets/{filename}")).convert_alpha()
-            # Crop to the non-transparent bounding rect so different
-            # amounts of transparent padding don't cause visual size
-            # mismatches, then scale the cropped content to a uniform
-            # POWERUP_VISIBLE_SIZE and center it on a POWERUP_IMG_SIZE
-            # surface (the hitbox stays POWERUP_IMG_SIZE).
-            content = raw.subsurface(raw.get_bounding_rect())
+            # Crop to the largest contiguous block of opaque pixels, then
+            # aspect-fit scale within POWERUP_VISIBLE_SIZE.  Simple
+            # bounding-rect crops fail on sprites with stray corner pixels
+            # (e.g. sheild.png has isolated opaque pixels at two corners
+            # that span the full canvas).  The contiguous-block approach
+            # finds the main icon content and ignores disconnected artifacts.
+            crop = _content_crop(raw)
+            content = raw.subsurface(crop)
             vis = settings.POWERUP_VISIBLE_SIZE
-            scaled = pygame.transform.smoothscale(content, vis)
+            w, h = content.get_size()
+            scale = min(vis[0] / w, vis[1] / h)
+            new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+            scaled = pygame.transform.smoothscale(content, new_size)
             surf = pygame.Surface(settings.POWERUP_IMG_SIZE, pygame.SRCALPHA)
-            ox = (settings.POWERUP_IMG_SIZE[0] - vis[0]) // 2
-            oy = (settings.POWERUP_IMG_SIZE[1] - vis[1]) // 2
+            ox = (settings.POWERUP_IMG_SIZE[0] - new_size[0]) // 2
+            oy = (settings.POWERUP_IMG_SIZE[1] - new_size[1]) // 2
             surf.blit(scaled, (ox, oy))
             powerup_images[kind] = surf
 

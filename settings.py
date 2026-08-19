@@ -237,13 +237,13 @@ HEALTH_POWERUP_MIN_HEALTH_FRACTION: float = 0.8
 # i-frame window (H2), the shield blocks even a would-be lethal hit - that
 # is the entire point of picking it up. It is time-based, never consumed by
 # a single hit.
-POWERUP_SHIELD_DURATION_SECONDS: float = 8.0
+POWERUP_SHIELD_DURATION_SECONDS: float = 3.0
 
 # Rapid fire: while active, the hold-to-fire cooldown is multiplied by
 # RAPID_FIRE_COOLDOWN_MULTIPLIER (0.2 s -> 0.06 s, ~16 shots/s). Collecting
 # another rapid-fire pickup while one is active refreshes the duration
 # rather than stacking.
-POWERUP_RAPID_FIRE_DURATION_SECONDS: float = 8.0
+POWERUP_RAPID_FIRE_DURATION_SECONDS: float = 3.0
 RAPID_FIRE_COOLDOWN_MULTIPLIER: float = 0.3
 
 # Power-up HUD + shield aura colors (cyan shield bubble, yellow rapid).
@@ -299,6 +299,25 @@ HIGHSCORE_FILE: str = "highscores.json"
 # on the high-scores screen.
 SCORE_IMG_SIZE: tuple[int, int] = (250, 80)
 BACK_IMG_SIZE: tuple[int, int] = (250, 80)
+
+# --- Levels ---
+# The game is split into discrete levels. Each level has a score target
+# that triggers a transition to the next level (or ends the run if it's
+# the last implemented level). Score resets on transition; the run timer
+# continues across levels.
+LEVEL_COUNT: int = 2
+LEVEL_SCORE_TARGETS: list[int] = [200, 100]  # Level 1 target, Level 2 target (placeholder)
+
+# Fade text: displayed centered on screen, fades in, holds, fades out.
+# Used for "Phase 1", "Level Finished", "Phase 2" (placeholder for L2).
+FADE_TEXT_FONT_SIZE: int = 72
+FADE_TEXT_HOLD_SECONDS: float = 1.5  # how long the text stays fully visible
+FADE_TEXT_SPEED: int = 5  # alpha change per frame (255 / ~51 frames ≈ 0.85s fade in/out)
+FADE_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
+
+# Run timer: measures total in-game time across all levels. Pauses on
+# non-game states (menu, pause, game_over) using the same paused_ms
+# pattern as the difficulty clock.
 
 # --- Button hover offset (buttons nudge down 5px on hover) ---
 BUTTON_HOVER_OFFSET: int = 5

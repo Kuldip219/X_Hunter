@@ -347,19 +347,35 @@ def test_fall_speed_constant_reasonable():
 
 
 def test_all_powerup_icons_same_visual_size(game):
-    """All three power-up sprites produce identical visible content
-    dimensions after the crop-to-content + scale step in Assets.load()."""
-    sizes = {
-        kind: surf.get_size()
-        for kind, surf in game.assets.powerup_images.items()
-    }
-    # All three should be POWERUP_IMG_SIZE (the hitbox surface)
-    for kind, size in sizes.items():
-        assert size == settings.POWERUP_IMG_SIZE, f"{kind}: {size} != {settings.POWERUP_IMG_SIZE}"
-    # Visible content should all be POWERUP_VISIBLE_SIZE (centered inside)
+    """All three power-up sprites produce similar visible content sizes
+    after the aspect-fit scale step in Assets.load()."""
     for kind in settings.POWERUP_TYPES:
         surf = game.assets.powerup_images[kind]
-        # The content is centered; non-transparent bbox should be <= POWERUP_VISIBLE_SIZE
-        bbox = surf.get_bounding_rect()
-        assert bbox.width <= settings.POWERUP_VISIBLE_SIZE[0] + 2  # pixel rounding
-        assert bbox.height <= settings.POWERUP_VISIBLE_SIZE[1] + 2
+        assert surf.get_size() == settings.POWERUP_IMG_SIZE, (
+            f"{kind}: surface {surf.get_size()} != {settings.POWERUP_IMG_SIZE}"
+        )
+    # Aspect-fit scale means all visible content fits within
+    # POWERUP_VISIBLE_SIZE; the largest dimension of each icon's
+    # non-transparent content should be within a few pixels of the
+    # others (they won't be identical due to different aspect ratios,
+    # but they should all be visually comparable).
+    content_sizes = []
+    for kind in settings.POWERUP_TYPES:
+        bbox = game.assets.powerup_images[kind].get_bounding_rect()
+        content_sizes.append((bbox.width, bbox.height))
+    # All should fit within POWERUP_VISIBLE_SIZE
+    for i, kind in enumerate(settings.POWERUP_TYPES):
+        w, h = content_sizes[i]
+        assert w <= settings.POWERUP_VISIBLE_SIZE[0] + 2, (
+            f"{kind}: width {w} > {settings.POWERUP_VISIBLE_SIZE[0]}"
+        )
+        assert h <= settings.POWERUP_VISIBLE_SIZE[1] + 2, (
+            f"{kind}: height {h} > {settings.POWERUP_VISIBLE_SIZE[1]}"
+        )
+    # The max dimension across all icons should be within 8px of each
+    # other (ensures no icon is dramatically smaller, while allowing
+    # for natural aspect-ratio differences between sprites)
+    max_dims = [max(w, h) for w, h in content_sizes]
+    assert max(max_dims) - min(max_dims) <= 8, (
+        f"Content sizes too dissimilar: {content_sizes}"
+    )

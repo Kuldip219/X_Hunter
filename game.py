@@ -9,6 +9,7 @@ import pygame
 import settings
 import ui
 from assets import Assets
+from ui import FadeText
 from audio import AudioManager
 from bullet import Bullet
 from difficulty import Difficulty
@@ -61,6 +62,7 @@ class Game:
         self.screen_shake = ui.ScreenShake()
         self.damage_flash = ui.DamageFlash()
         self.fade = ui.FadeTransition((settings.WIDTH, settings.HEIGHT))
+        self.fade_text = FadeText("")
         self.shake_offset: tuple[int, int] = (0, 0)
         self.difficulty = Difficulty()
 
@@ -70,6 +72,29 @@ class Game:
         # constant FIXED_DT simulation steps (see _advance_simulation).
         self.accumulator = 0.0
 
+        # Level state: current level number (0-indexed), its score target,
+        # and the checkpoint level for death/restart (Level 1 death resets
+        # to 0, Level 2 death restarts at 1).
+        self.current_level: int = 0
+        self.checkpoint_level: int = 0
+        self.level_score_target: int = settings.LEVEL_SCORE_TARGETS[0]
+
+        # Run timer: total in-game seconds across all levels. Pauses on
+        # non-game states (menu/pause/game_over) using the same paused_ms
+        # pattern as the difficulty clock. Continues through level
+        # transitions and fade text overlays.
+        self.run_timer: float = 0.0
+        self.run_timer_paused_ms: float = 0.0
+
+        # Flag set when a level's score target is reached; freezes gameplay
+        # while the "Level Finished" fade text plays. Cleared when the
+        # transition completes.
+        self._level_transition_pending: bool = False
+
+        # Flag set at the start of a level to show "Phase N" intro text.
+        # Cleared when the text finishes.
+        self._level_intro_pending: bool = False
+
         # player, bullets, enemies, explosions, and score are all
         # initialized by reset_game() below.
         self.reset_game()
@@ -78,8 +103,18 @@ class Game:
     # State setup
     # ------------------------------------------------------------------ #
 
-    def reset_game(self) -> None:
-        """Start a fresh run: new player, new enemy wave, score/health reset."""
+    def reset_game(self, from_checkpoint: bool = False) -> None:
+        """Start a fresh run or resume from a checkpoint.
+
+        from_checkpoint=False (default): full reset — new player, new enemy
+        wave, score/health reset, difficulty clock reset, run timer reset,
+        back to Level 1.
+
+        from_checkpoint=True: restart at the checkpoint level (Level 2 on
+        death in Level 2). Score resets, difficulty clock resets, but the
+        run timer keeps its accumulated value. The "Phase N" intro text
+        plays for the checkpoint level.
+        """
         self.player = Player(settings.WIDTH // 2, settings.HEIGHT - 80)
         self.bullets = []
         self.enemies = [
@@ -100,6 +135,33 @@ class Game:
         self.paused_ms = 0.0
         # A fresh run hasn't earned a leaderboard rank yet.
         self.last_run_rank = None
+
+        # Level state: full reset goes to Level 0; checkpoint preserves
+        # the level that was active when the player died.
+        if from_checkpoint:
+            self.current_level = self.checkpoint_level
+            # Preserve the run timer: shift run_start_ticks backward by
+            # the accumulated seconds so the formula
+            #   (get_ticks() - run_start_ticks - run_timer_paused_ms) / 1000
+            # produces the correct total once paused_ms and
+            # run_timer_paused_ms are reset to 0.
+            saved_timer = self.run_timer
+            self.paused_ms = 0.0
+            self.run_timer_paused_ms = 0.0
+            self.run_start_ticks = pygame.time.get_ticks() - int(saved_timer * 1000)
+            self.run_timer = saved_timer
+        else:
+            self.current_level = 0
+            self.checkpoint_level = 0
+            self.run_timer = 0.0
+            self.run_timer_paused_ms = 0.0
+        self.level_score_target = settings.LEVEL_SCORE_TARGETS[self.current_level]
+
+        # Freeze gameplay during the intro fade text.
+        self._level_transition_pending = False
+        self._level_intro_pending = True
+        phase_num = self.current_level + 1
+        self.fade_text.reset(f"Phase {phase_num}")
 
     # ------------------------------------------------------------------ #
     # Main loop
@@ -126,6 +188,15 @@ class Game:
                 self._change_state(new_state)
             self.fade.draw(self.screen)
 
+            # Fade text overlay: updated and drawn every frame while active.
+            # When it finishes, handle any pending level transition.
+            if self.fade_text.active:
+                self.fade_text.update()
+                if self.state == "game":
+                    self.fade_text.draw(self.screen, self.assets.big_font)
+                if not self.fade_text.active:
+                    self._on_fade_text_done()
+
             pygame.display.update()
 
         pygame.quit()
@@ -145,15 +216,31 @@ class Game:
         While the state is not "game" (menu/pause/game_over) no simulation
         runs and the accumulator is cleared, so time spent paused or in a menu
         never fast-forwards gameplay on resume.
+
+        The run timer mirrors the difficulty clock: it only measures time
+        spent in the "game" state, pausing during menu/pause/game_over.
+        Unlike the difficulty clock, it continues through level transitions
+        (fade text overlays) since those happen while state == "game".
         """
         if self.state != "game":
             self.accumulator = 0.0
-            # The difficulty clock mirrors the accumulator: it must only
-            # measure time spent in the "game" state. Bank every non-game
-            # rendered frame's full real duration (uncapped - all of it is
-            # paused/menu time) so elapsed survival time freezes during a
-            # pause and resumes exactly where it left off.
+            # Bank non-game time for both the difficulty clock and the run
+            # timer so both freeze during menu/pause/game_over.
             self.paused_ms += raw_dt * 1000.0
+            self.run_timer_paused_ms += raw_dt * 1000.0
+            return 0
+
+        # While the fade text is active (level intro or level finished),
+        # freeze the simulation but keep the run timer counting (level
+        # transitions happen within the "game" state).
+        if self.fade_text.active:
+            self.paused_ms += raw_dt * 1000.0
+            self.accumulator = 0.0
+            # Update the run timer here since _update_game won't run.
+            self.run_timer = (
+                (pygame.time.get_ticks() - self.run_start_ticks - self.run_timer_paused_ms)
+                / 1000.0
+            )
             return 0
 
         self.accumulator += min(raw_dt, settings.MAX_FRAME_DT)
@@ -219,6 +306,43 @@ class Game:
             self.audio.pause_music()
         elif new_state in ("menu", "game_over", "high_scores", "controls"):
             self.audio.stop_music()
+
+    def _on_fade_text_done(self) -> None:
+        """Called when a fade text overlay finishes. Handles level intro
+        completion (resume gameplay) and level finished transition (advance
+        to next level or end run).
+        """
+        if self._level_intro_pending:
+            # Intro text finished — unfreeze gameplay.
+            self._level_intro_pending = False
+        elif self._level_transition_pending:
+            # Level finished text finished — advance to next level.
+            self._level_transition_pending = False
+            self.current_level += 1
+            # Update checkpoint so death in this level restarts here.
+            self.checkpoint_level = self.current_level
+            if self.current_level >= settings.LEVEL_COUNT:
+                # No more levels — end the run.
+                self.fade.start("game_over")
+                self.last_run_rank = self.high_scores.add(self.score)
+            else:
+                # Start the next level: reset score, set new target,
+                # show "Phase N" intro text.
+                self.score = 0
+                self.level_score_target = settings.LEVEL_SCORE_TARGETS[self.current_level]
+                self._level_intro_pending = True
+                phase_num = self.current_level + 1
+                self.fade_text.reset(f"Phase {phase_num}")
+
+    def _check_level_completion(self) -> None:
+        """Check if the current level's score target has been reached.
+        If so, freeze gameplay and show the "Level Finished" fade text.
+        """
+        if self._level_transition_pending or self._level_intro_pending:
+            return
+        if self.score >= self.level_score_target:
+            self._level_transition_pending = True
+            self.fade_text.reset("Level Finished")
 
     def _draw_mute_indicator(self) -> None:
         """Small 'MUTED' label in the top-right corner while audio is off."""
@@ -292,7 +416,9 @@ class Game:
             if action:
                 self.audio.play("menu_click")
             if action == "restart":
-                self.reset_game()
+                # If the player died in Level 2, restart from that level
+                # (run timer preserved). Otherwise full reset.
+                self.reset_game(from_checkpoint=self.checkpoint_level > 0)
                 self.fade.start("game")
             elif action == "quit_to_menu":
                 self.fade.start("menu")
@@ -381,6 +507,12 @@ class Game:
         elapsed = (pygame.time.get_ticks() - self.run_start_ticks - self.paused_ms) / 1000.0
         diff = self.difficulty.value(self.score, elapsed)
 
+        # Run timer: total in-game seconds across all levels. Uses the same
+        # get_ticks pattern but subtracts run_timer_paused_ms (time outside
+        # "game" state) rather than paused_ms (which also freezes during
+        # fade text overlays, where the run timer keeps counting).
+        self.run_timer = (pygame.time.get_ticks() - self.run_start_ticks - self.run_timer_paused_ms) / 1000.0
+
         enemy_speed = min(
             settings.ENEMY_SPEED_PER_SEC + settings.ENEMY_SPEED_GAIN_PER_SEC * diff,
             settings.ENEMY_MAX_SPEED_PER_SEC,
@@ -459,6 +591,7 @@ class Game:
                         self.powerups.append(PowerUp(kind, enemy.x, enemy.y))
                     enemy.respawn(settings.WIDTH)
                     self.score += 1
+                    self._check_level_completion()
                     break
 
         self.shake_offset = self.screen_shake.update()

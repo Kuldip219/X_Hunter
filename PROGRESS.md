@@ -1,6 +1,6 @@
 # X Hunter — Project Audit & Work Log
 
-Status: **54 tests passing** · last updated August 14, 2026.
+Status: **143 tests passing** · last updated August 18, 2026.
 
 ## 1. Project snapshot
 
@@ -327,6 +327,43 @@ and a burned-in damage flash. Added the missing per-frame
 capture process from a previous session that was fighting the new one over
 frame.png.
 
+### 3.21 Custom power-up sprites + icon sizing + fall speed + shorter durations — **143 tests**
+
+**Custom sprites (uncommitted):** user replaced all three Kenney power-up
+icons with their own artwork: `bolt.png` (rapid fire, 736×736),
+`heart.png` (health, 736×736), `sheild.png` (shield, 626×626 — note
+"sheild" typo is intentional, kept in filenames). Old Kenney sprites
+(`powerup_shield.png`, `powerup_rapid.png`, `powerup_health.png`) removed
+from git. Attribution updated in `Assets/SOURCES.md`.
+
+**Icon sizing fix:** the user-reported size mismatch (shield visually
+smaller than bolt/heart) was caused by `sheild.png` having stray opaque
+pixels at two opposite corners (bottom-left y=582–625, top-right y=0–15)
+disconnected from the main shield icon (x=180–435, y=210–418). Simple
+`get_bounding_rect()` returned the full 626×626 canvas, making the crop
+useless. Fixed with a `_content_crop()` helper in `assets.py` that finds
+the **largest contiguous block** of opaque rows/columns (ignoring
+disconnected artifacts), then aspect-fit scales within `POWERUP_VISIBLE_SIZE`
+(28×28). All three icons now render at comparable visible sizes:
+shield 24×22, bolt 20×20, heart 24×26. Hitbox stays `POWERUP_IMG_SIZE`
+(40×40) — only the visual changed. Requires `numpy` (added to
+`requirements.txt`) for the alpha-channel scan.
+
+**Fall speed:** increased from 120 to 250 px/sec (`POWERUP_FALL_SPEED_PER_SEC`).
+Still well below enemy speed (300 px/s) and bullet speed (600 px/s), but
+fast enough that drops feel responsive rather than drifting.
+
+**Duration constants changed:** both `POWERUP_SHIELD_DURATION_SECONDS` and
+`POWERUP_RAPID_FIRE_DURATION_SECONDS` changed from 8.0 to 3.0 seconds.
+Uses the existing dt-based timer system (no frame-count changes). The
+refresh-not-stack behavior for rapid fire is unchanged. The on-screen
+countdown (`SHIELD X.Xs` / `RAPID FIRE X.Xs`) updates automatically.
+
+**Tests:** `test_all_powerup_icons_same_visual_size` verifies all icons
+fit within `POWERUP_VISIBLE_SIZE` with max dimension difference ≤ 8 px.
+`test_fall_speed_is_dt_based` and `test_fall_speed_constant_reasonable`
+verify the speed change.
+
 ## 5. Current repo state
 
 ```
@@ -370,8 +407,10 @@ a9e5b5b Initial commit
 - **Hold-to-fire cadence tuning** (`PLAYER_FIRE_COOLDOWN_SECONDS` is a single constant).
 - **Artifact history purge** (rewriting the initial commit to drop build/dist) —
   deliberately deferred; a separate, higher-risk decision.
-- **Commit the pending delta-time + fixed-timestep + high-scores changes**
-  (currently uncommitted).
+- **Commit the pending power-up sprite + sizing + duration changes**
+  (currently uncommitted — section 3.21).
+- **Update requirements.txt** to include `numpy` (needed by `assets.py`'s
+  `_content_crop()` helper for alpha-channel scanning).
 
 ## 7. High-score leaderboard (latest work)
 

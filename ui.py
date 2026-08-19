@@ -127,3 +127,64 @@ def draw_score(
 ) -> None:
     text = font.render(f"Score: {score}", True, color)
     screen.blit(text, pos)
+
+
+class FadeText:
+    """Reusable centered text that fades in, holds, then fades out.
+
+    Usage::
+        ft = FadeText("Phase 1")
+        # in the game loop, while ft.active:
+        ft.update()  # advance the animation
+        ft.draw(screen, font)  # render if visible
+        if not ft.active: ...  # move to next phase
+
+    The text is centered on screen. update() and draw() are frame-based
+    (FADE_TEXT_SPEED alpha steps per frame) to match the existing
+    FadeTransition pattern.
+    """
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.alpha = 0
+        self.phase = "in"  # "in" -> "hold" -> "out" -> done
+        self.hold_counter = 0
+        self.active = True
+
+    def reset(self, text: str | None = None) -> None:
+        """Restart the animation, optionally with new text."""
+        if text is not None:
+            self.text = text
+        self.alpha = 0
+        self.phase = "in"
+        self.hold_counter = 0
+        self.active = True
+
+    def update(self) -> None:
+        """Advance one frame. Call once per rendered frame while active."""
+        if not self.active:
+            return
+        if self.phase == "in":
+            self.alpha = min(255, self.alpha + settings.FADE_TEXT_SPEED)
+            if self.alpha >= 255:
+                self.phase = "hold"
+                self.hold_counter = 0
+        elif self.phase == "hold":
+            self.hold_counter += 1
+            # Convert hold seconds to frames at the game's target FPS.
+            hold_frames = int(settings.FADE_TEXT_HOLD_SECONDS * settings.FPS)
+            if self.hold_counter >= hold_frames:
+                self.phase = "out"
+        elif self.phase == "out":
+            self.alpha = max(0, self.alpha - settings.FADE_TEXT_SPEED)
+            if self.alpha <= 0:
+                self.active = False
+
+    def draw(self, screen: pygame.Surface, font: pygame.font.Font) -> None:
+        """Draw the text if visible (alpha > 0)."""
+        if not self.active or self.alpha <= 0:
+            return
+        text_surf = font.render(self.text, True, settings.FADE_TEXT_COLOR)
+        text_surf.set_alpha(self.alpha)
+        rect = text_surf.get_rect(center=(screen.get_width() // 2, screen.get_height() // 2))
+        screen.blit(text_surf, rect)

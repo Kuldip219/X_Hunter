@@ -43,6 +43,11 @@ def start_game(game) -> None:
     game._handle_mouse_click(game.main_menu.play_rect.center)
     pump_fade(game)
     assert game.state == "game"
+    # Dismiss the "Phase N" intro fade text so gameplay can begin.
+    # In the real run() loop, the fade text plays as an overlay while the
+    # state is already "game"; tests bypass that loop, so we clear it here.
+    game.fade_text.active = False
+    game._level_intro_pending = False
 
 
 def place_enemy_over_player(game, dx: int = 10, dy: int = 5) -> "Enemy":
