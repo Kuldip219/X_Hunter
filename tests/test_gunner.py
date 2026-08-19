@@ -159,6 +159,43 @@ class TestLevel2Spawning:
         assert len(game.enemies) > 0
         assert len(game.gunners) == 0
 
+    def test_level_1_never_spawns_gunners_during_gameplay(self, game):
+        """After multiple update cycles in Level 1, no gunners appear."""
+        start_game(game)
+        # Clear fade text so gameplay runs.
+        game.fade_text.active = False
+        game._level_intro_pending = False
+        assert game.current_level == 0
+
+        for _ in range(300):
+            game._update_game(KeyState(), 1.0 / settings.FPS)
+
+        assert len(game.enemies) > 0
+        assert len(game.gunners) == 0, (
+            f"Level 1 should have 0 gunners, got {len(game.gunners)}"
+        )
+
+    def test_level_2_never_spawns_enemies_during_gameplay(self, game):
+        """After multiple update cycles in Level 2, no falling enemies appear."""
+        start_game(game)
+        # Fast-forward to Level 2.
+        game.score = settings.LEVEL_SCORE_TARGETS[0]
+        game._check_level_completion()
+        for _ in range(200):
+            game.fade_text.update()
+        game._on_fade_text_done()
+        game.fade_text.active = False
+        game._level_intro_pending = False
+        assert game.current_level == 1
+
+        for _ in range(300):
+            game._update_game(KeyState(), 1.0 / settings.FPS)
+
+        assert len(game.gunners) > 0
+        assert len(game.enemies) == 0, (
+            f"Level 2 should have 0 falling enemies, got {len(game.enemies)}"
+        )
+
 
 # ── Enemy bullet interactions ─────────────────────────────────────────
 

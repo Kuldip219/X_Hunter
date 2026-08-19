@@ -552,39 +552,41 @@ class Game:
         self.run_timer = (pygame.time.get_ticks() - self.run_start_ticks - self.run_timer_paused_ms) / 1000.0
 
         # --- Level 1: falling enemies ---
-        enemy_speed = min(
-            settings.ENEMY_SPEED_PER_SEC + settings.ENEMY_SPEED_GAIN_PER_SEC * diff,
-            settings.ENEMY_MAX_SPEED_PER_SEC,
-        )
-        for enemy in self.enemies:
-            enemy.speed = enemy_speed
+        if self.current_level == 0:
+            enemy_speed = min(
+                settings.ENEMY_SPEED_PER_SEC + settings.ENEMY_SPEED_GAIN_PER_SEC * diff,
+                settings.ENEMY_MAX_SPEED_PER_SEC,
+            )
+            for enemy in self.enemies:
+                enemy.speed = enemy_speed
 
-        target_count = min(
-            settings.INITIAL_ENEMY_COUNT + int(settings.ENEMY_COUNT_GAIN * diff),
-            settings.ENEMY_MAX_COUNT,
-        )
-        while len(self.enemies) < target_count:
-            self.enemies.append(Enemy.spawn_initial(settings.WIDTH))
+            target_count = min(
+                settings.INITIAL_ENEMY_COUNT + int(settings.ENEMY_COUNT_GAIN * diff),
+                settings.ENEMY_MAX_COUNT,
+            )
+            while len(self.enemies) < target_count:
+                self.enemies.append(Enemy.spawn_initial(settings.WIDTH))
 
         # --- Level 2: gunner enemies ---
-        gunner_speed = min(
-            settings.GUNNER_DESCEND_SPEED_PER_SEC + int(settings.ENEMY_SPEED_GAIN_PER_SEC * diff * 0.5),
-            settings.ENEMY_MAX_SPEED_PER_SEC,
-        )
-        gunner_drift = min(
-            settings.GUNNER_DRIFT_SPEED_PER_SEC + int(settings.ENEMY_SPEED_GAIN_PER_SEC * diff * 0.3),
-            300,
-        )
-        for gunner in self.gunners:
-            gunner.descend_speed = gunner_speed
-            gunner.drift_speed = gunner_drift
+        if self.current_level == 1:
+            gunner_speed = min(
+                settings.GUNNER_DESCEND_SPEED_PER_SEC + int(settings.ENEMY_SPEED_GAIN_PER_SEC * diff * 0.5),
+                settings.ENEMY_MAX_SPEED_PER_SEC,
+            )
+            gunner_drift = min(
+                settings.GUNNER_DRIFT_SPEED_PER_SEC + int(settings.ENEMY_SPEED_GAIN_PER_SEC * diff * 0.3),
+                300,
+            )
+            for gunner in self.gunners:
+                gunner.descend_speed = gunner_speed
+                gunner.drift_speed = gunner_drift
 
-        target_gunner_count = min(
-            settings.INITIAL_ENEMY_COUNT + int(settings.ENEMY_COUNT_GAIN * diff * 0.5),
-            settings.ENEMY_MAX_COUNT,
-        )
-        while len(self.gunners) < target_gunner_count:
-            self.gunners.append(GunnerEnemy.spawn_initial(settings.WIDTH))
+            target_gunner_count = min(
+                settings.INITIAL_ENEMY_COUNT + int(settings.ENEMY_COUNT_GAIN * diff * 0.5),
+                settings.ENEMY_MAX_COUNT,
+            )
+            while len(self.gunners) < target_gunner_count:
+                self.gunners.append(GunnerEnemy.spawn_initial(settings.WIDTH))
 
         # --- Player bullets ---
         for bullet in self.bullets[:]:
