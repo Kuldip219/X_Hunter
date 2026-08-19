@@ -404,10 +404,18 @@ class ControlsScreen:
         return None
 
 
+def _format_time(seconds: float) -> str:
+    """Format seconds as mm:ss (e.g. 125.3 -> '2:05')."""
+    mins = int(seconds) // 60
+    secs = int(seconds) % 60
+    return f"{mins}:{secs:02d}"
+
+
 class HighScoresMenu:
-    """The persistent leaderboard screen: shows the top-10 scores ranked.
-    Reached only via the Options screen (score.png button); its BACK button
-    (back.png) returns to Options, one level up."""
+    """The persistent leaderboard screen: shows the top-10 runs ranked by
+    time.  "Finished" entries rank above "Dead" entries; within each group
+    shorter time ranks first.  Reached via the Options screen; its BACK
+    button returns to Options."""
 
     def __init__(
         self,
@@ -437,34 +445,33 @@ class HighScoresMenu:
         mouse_pos: tuple[int, int],
         highlight_rank: Optional[int] = None,
     ) -> None:
-        """Draw the ranked score list. The row at `highlight_rank` (the rank
+        """Draw the ranked run list. The row at `highlight_rank` (the rank
         the just-finished run earned, if it qualified) is drawn highlighted."""
         screen.fill(settings.MENU_BG_COLOR)
         title = self.assets.big_font.render("HIGH SCORES", True, settings.WHITE)
         screen.blit(title, title.get_rect(center=(self.screen_width // 2, 120)))
 
-        entries = self.table.scores if self.table is not None else []
+        entries = self.table.entries if self.table is not None else []
         if not entries:
-            empty = self.assets.font.render("No scores yet", True, settings.LIGHT_GRAY)
+            empty = self.assets.font.render("No runs yet", True, settings.LIGHT_GRAY)
             screen.blit(empty, empty.get_rect(center=(self.screen_width // 2, 300)))
         else:
             for i, entry in enumerate(entries[: settings.HIGHSCORE_MAX]):
                 highlighted = highlight_rank is not None and i == highlight_rank
                 color = settings.SCORE_COLOR if highlighted else settings.WHITE
                 rank_img = self.assets.font.render(f"{i + 1}.", True, color)
-                score_img = self.assets.font.render(str(entry.score), True, color)
-                date_img = self.assets.font.render(
-                    time.strftime("%Y-%m-%d", time.localtime(entry.timestamp)),
-                    True,
-                    settings.LIGHT_GRAY,
+                time_img = self.assets.font.render(_format_time(entry.time_seconds), True, color)
+                result_color = (
+                    (100, 255, 100) if entry.result == "Finished" else (255, 100, 100)
                 )
+                result_img = self.assets.font.render(entry.result, True, result_color)
                 row_y = 200 + i * 42
-                screen.blit(rank_img, rank_img.get_rect(midleft=(160, row_y)))
-                screen.blit(score_img, score_img.get_rect(midleft=(230, row_y)))
-                screen.blit(date_img, date_img.get_rect(midright=(440, row_y)))
+                screen.blit(rank_img, rank_img.get_rect(midleft=(120, row_y)))
+                screen.blit(time_img, time_img.get_rect(midleft=(190, row_y)))
+                screen.blit(result_img, result_img.get_rect(midright=(480, row_y)))
                 if highlighted:
                     new_img = self.assets.font.render("NEW", True, settings.SCORE_COLOR)
-                    screen.blit(new_img, new_img.get_rect(midright=(540, row_y)))
+                    screen.blit(new_img, new_img.get_rect(midright=(560, row_y)))
 
         _draw_button(screen, self.back_img, self.back_rect, mouse_pos)
         _track_hover(self, mouse_pos)

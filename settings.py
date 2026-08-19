@@ -111,6 +111,22 @@ INITIAL_ENEMY_MAX_Y: int = 0
 RESPAWN_ENEMY_MIN_Y: int = -200
 RESPAWN_ENEMY_MAX_Y: int = 0
 
+# --- Gunner enemy (Level 2 exclusive) ---
+# The gunner descends to a random stop-Y within this fraction of screen
+# height, then drifts side-to-side and fires straight down on a cooldown.
+# Exposed as named constants so we can tune the feel after seeing it live.
+GUNNER_MAX_DESCENT_FRACTION: float = 0.55  # never past 55% of screen height
+GUNNER_DRIFT_SPEED_PER_SEC: int = 150  # side-to-side px/s once stopped
+GUNNER_FIRE_COOLDOWN_SECONDS: float = 2.0  # seconds between shots after stopping
+GUNNER_DESCEND_SPEED_PER_SEC: int = 120  # px/s while descending to stop-Y
+
+# --- Enemy bullets ---
+# Fired straight down by gunner enemies. Visually recolored from the
+# player bullet sprite (red tint) at load time in assets.py.
+ENEMY_BULLET_SPEED_PER_SEC: int = 400  # px/s downward
+ENEMY_BULLET_IMG_SIZE: tuple[int, int] = (10, 16)
+ENEMY_BULLET_OFFSCREEN_Y: int = 820  # below screen bottom
+
 # --- Explosions ---
 EXPLOSION_IMG_SIZE: tuple[int, int] = (70, 70)
 EXPLOSION_FRAME_COUNT: int = 8

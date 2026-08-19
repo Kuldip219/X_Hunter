@@ -14,7 +14,9 @@ from audio import AudioManager
 from bullet import Bullet
 from difficulty import Difficulty
 from enemy import Enemy
+from enemy_bullet import EnemyBullet
 from explosion import Explosion
+from gunner import GunnerEnemy
 from highscores import HighScoreTable
 from menus import ControlsScreen, GameOverMenu, HighScoresMenu, MainMenu, OptionsScreen, PauseMenu
 from player import Player
@@ -117,9 +119,11 @@ class Game:
         """
         self.player = Player(settings.WIDTH // 2, settings.HEIGHT - 80)
         self.bullets = []
-        self.enemies = [
-            Enemy.spawn_initial(settings.WIDTH) for _ in range(settings.INITIAL_ENEMY_COUNT)
-        ]
+        self.enemy_bullets = []
+        # Level 1: falling enemies.  Level 2: gunner enemies (set after
+        # level state is initialized below).
+        self.enemies = []
+        self.gunners = []
         # Power-ups dropped by destroyed enemies (cleared on every restart).
         self.powerups = []
         self.score = 0
@@ -156,6 +160,20 @@ class Game:
             self.run_timer = 0.0
             self.run_timer_paused_ms = 0.0
         self.level_score_target = settings.LEVEL_SCORE_TARGETS[self.current_level]
+
+        # Spawn the initial enemy wave for the current level.
+        if self.current_level == 0:
+            # Level 1: falling enemies.
+            self.enemies = [
+                Enemy.spawn_initial(settings.WIDTH) for _ in range(settings.INITIAL_ENEMY_COUNT)
+            ]
+            self.gunners = []
+        else:
+            # Level 2+: gunner enemies.
+            self.gunners = [
+                GunnerEnemy.spawn_initial(settings.WIDTH) for _ in range(settings.INITIAL_ENEMY_COUNT)
+            ]
+            self.enemies = []
 
         # Freeze gameplay during the intro fade text.
         self._level_transition_pending = False
@@ -322,14 +340,34 @@ class Game:
             # Update checkpoint so death in this level restarts here.
             self.checkpoint_level = self.current_level
             if self.current_level >= settings.LEVEL_COUNT:
-                # No more levels — end the run.
+                # No more levels — end the run as Finished.
                 self.fade.start("game_over")
-                self.last_run_rank = self.high_scores.add(self.score)
+                self.last_run_rank = self.high_scores.add(
+                    self.run_timer, result="Finished"
+                )
             else:
                 # Start the next level: reset score, set new target,
-                # show "Phase N" intro text.
+                # spawn the appropriate enemy type, show "Phase N" intro.
                 self.score = 0
                 self.level_score_target = settings.LEVEL_SCORE_TARGETS[self.current_level]
+
+                if self.current_level == 0:
+                    # Level 1: falling enemies.
+                    self.enemies = [
+                        Enemy.spawn_initial(settings.WIDTH)
+                        for _ in range(settings.INITIAL_ENEMY_COUNT)
+                    ]
+                    self.gunners = []
+                else:
+                    # Level 2+: gunner enemies.
+                    self.gunners = [
+                        GunnerEnemy.spawn_initial(settings.WIDTH)
+                        for _ in range(settings.INITIAL_ENEMY_COUNT)
+                    ]
+                    self.enemies = []
+                self.enemy_bullets = []
+                self.powerups = []
+
                 self._level_intro_pending = True
                 phase_num = self.current_level + 1
                 self.fade_text.reset(f"Phase {phase_num}")
@@ -513,6 +551,7 @@ class Game:
         # fade text overlays, where the run timer keeps counting).
         self.run_timer = (pygame.time.get_ticks() - self.run_start_ticks - self.run_timer_paused_ms) / 1000.0
 
+        # --- Level 1: falling enemies ---
         enemy_speed = min(
             settings.ENEMY_SPEED_PER_SEC + settings.ENEMY_SPEED_GAIN_PER_SEC * diff,
             settings.ENEMY_MAX_SPEED_PER_SEC,
@@ -527,18 +566,37 @@ class Game:
         while len(self.enemies) < target_count:
             self.enemies.append(Enemy.spawn_initial(settings.WIDTH))
 
+        # --- Level 2: gunner enemies ---
+        gunner_speed = min(
+            settings.GUNNER_DESCEND_SPEED_PER_SEC + int(settings.ENEMY_SPEED_GAIN_PER_SEC * diff * 0.5),
+            settings.ENEMY_MAX_SPEED_PER_SEC,
+        )
+        gunner_drift = min(
+            settings.GUNNER_DRIFT_SPEED_PER_SEC + int(settings.ENEMY_SPEED_GAIN_PER_SEC * diff * 0.3),
+            300,
+        )
+        for gunner in self.gunners:
+            gunner.descend_speed = gunner_speed
+            gunner.drift_speed = gunner_drift
+
+        target_gunner_count = min(
+            settings.INITIAL_ENEMY_COUNT + int(settings.ENEMY_COUNT_GAIN * diff * 0.5),
+            settings.ENEMY_MAX_COUNT,
+        )
+        while len(self.gunners) < target_gunner_count:
+            self.gunners.append(GunnerEnemy.spawn_initial(settings.WIDTH))
+
+        # --- Player bullets ---
         for bullet in self.bullets[:]:
             bullet.update(dt)
             if bullet.off_screen:
                 self.bullets.remove(bullet)
 
+        # --- Falling enemies (Level 1): movement + collision ---
         for enemy in self.enemies:
             enemy.update(dt)
 
             if enemy.get_rect().colliderect(self.player.get_rect()):
-                # take_hit() returns False while the i-frame window is active,
-                # so an overlapping enemy neither damages the player nor
-                # re-triggers the hit effects during invulnerability.
                 if self.player.take_hit():
                     if self.player.dead:
                         self.audio.play("player_death")
@@ -552,9 +610,50 @@ class Game:
             if enemy.is_off_screen(settings.HEIGHT):
                 enemy.respawn(settings.WIDTH)
 
-        # Power-ups drift down and are auto-collected on contact with the
-        # player - no keypress needed, same style as every other collision
-        # check. They despawn after their real-time lifetime (or off-screen).
+        # --- Gunner enemies (Level 2): movement + firing ---
+        for gunner in self.gunners:
+            gunner.update(dt)
+
+            if gunner.can_fire():
+                # Fire from the center of the gunner.
+                bx = gunner.x + gunner.width // 2 - settings.ENEMY_BULLET_IMG_SIZE[0] // 2
+                by = gunner.y + gunner.height
+                self.enemy_bullets.append(EnemyBullet(bx, by))
+                gunner.reset_fire_cooldown()
+
+            # Gunner-player collision (same as falling enemy).
+            if gunner.get_rect().colliderect(self.player.get_rect()):
+                if self.player.take_hit():
+                    if self.player.dead:
+                        self.audio.play("player_death")
+                        self.audio.fade_out_music()
+                    else:
+                        self.audio.play("hit")
+                    self.screen_shake.trigger()
+                    self.damage_flash.trigger()
+                    gunner.respawn(settings.WIDTH)
+
+        # --- Enemy bullets: movement + cleanup + player collision ---
+        for ebullet in self.enemy_bullets[:]:
+            ebullet.update(dt)
+            if ebullet.off_screen:
+                self.enemy_bullets.remove(ebullet)
+                continue
+            if ebullet.get_rect().colliderect(self.player.get_rect()):
+                self.enemy_bullets.remove(ebullet)
+                if self.player.shield_active:
+                    # Shield absorbs the bullet — no damage, no SFX.
+                    pass
+                elif self.player.take_hit():
+                    if self.player.dead:
+                        self.audio.play("player_death")
+                        self.audio.fade_out_music()
+                    else:
+                        self.audio.play("hit")
+                    self.screen_shake.trigger()
+                    self.damage_flash.trigger()
+
+        # --- Power-ups ---
         for powerup in self.powerups[:]:
             powerup.update(dt)
             if powerup.expired(settings.HEIGHT):
@@ -564,6 +663,7 @@ class Game:
                 self.audio.play("powerup")
                 self.powerups.remove(powerup)
 
+        # --- Player bullets vs enemies (Level 1) ---
         for bullet in self.bullets[:]:
             for enemy in self.enemies:
                 if enemy.get_rect().colliderect(bullet.get_rect()):
@@ -573,28 +673,44 @@ class Game:
                     )
                     if bullet in self.bullets:
                         self.bullets.remove(bullet)
-                    # A defeated enemy may drop a power-up at its position
-                    # (roll against the configured drop chance). The HEALTH
-                    # power-up is a comeback item: while the player is at or
-                    # above 80% of their full health bar it is excluded from
-                    # the drop pool entirely, so it can never be farmed.
-                    if random.random() < settings.POWERUP_DROP_CHANCE:
-                        pool = settings.POWERUP_TYPES
-                        if self.player.health >= (
-                            settings.PLAYER_START_HEALTH * settings.HEALTH_POWERUP_MIN_HEALTH_FRACTION
-                        ):
-                            pool = tuple(
-                                k for k in settings.POWERUP_TYPES
-                                if k != settings.POWERUP_KIND_HEALTH
-                            )
-                        kind = random.choice(pool)
-                        self.powerups.append(PowerUp(kind, enemy.x, enemy.y))
+                    self._maybe_drop_powerup(enemy.x, enemy.y)
                     enemy.respawn(settings.WIDTH)
                     self.score += 1
                     self._check_level_completion()
                     break
 
+        # --- Player bullets vs gunners (Level 2) ---
+        for bullet in self.bullets[:]:
+            for gunner in self.gunners:
+                if gunner.get_rect().colliderect(bullet.get_rect()):
+                    self.audio.play("explosion")
+                    self.explosions.append(
+                        Explosion(gunner.x, gunner.y, settings.ENEMY_EXPLOSION_FRAME_DELAY)
+                    )
+                    if bullet in self.bullets:
+                        self.bullets.remove(bullet)
+                    self._maybe_drop_powerup(gunner.x, gunner.y)
+                    gunner.respawn(settings.WIDTH)
+                    self.score += 1
+                    self._check_level_completion()
+                    break
+
         self.shake_offset = self.screen_shake.update()
+
+    def _maybe_drop_powerup(self, x: float, y: float) -> None:
+        """Roll for a power-up drop at the given position (shared by both
+        falling-enemy and gunner kill paths)."""
+        if random.random() < settings.POWERUP_DROP_CHANCE:
+            pool = settings.POWERUP_TYPES
+            if self.player.health >= (
+                settings.PLAYER_START_HEALTH * settings.HEALTH_POWERUP_MIN_HEALTH_FRACTION
+            ):
+                pool = tuple(
+                    k for k in settings.POWERUP_TYPES
+                    if k != settings.POWERUP_KIND_HEALTH
+                )
+            kind = random.choice(pool)
+            self.powerups.append(PowerUp(kind, x, y))
 
     # ------------------------------------------------------------------ #
     # "game" state: draw
@@ -605,6 +721,16 @@ class Game:
 
         for enemy in self.enemies:
             enemy.draw(self.screen, self.assets.enemy_img, self.shake_offset)
+
+        for gunner in self.gunners:
+            gunner.draw(self.screen, self.assets.gunner_img, self.shake_offset)
+
+        # Enemy bullets (red, below player bullets in draw order).
+        for ebullet in self.enemy_bullets:
+            self.screen.blit(
+                self.assets.enemy_bullet_img,
+                (ebullet.x + self.shake_offset[0], ebullet.y + self.shake_offset[1]),
+            )
 
         for bullet in self.bullets:
             self.screen.blit(
@@ -647,12 +773,12 @@ class Game:
                 # the fade-out (H1).
                 self.fade.start("game_over")
                 self.player.explosion = None
-                # Record the final score on the persistent leaderboard
-                # right here, once per run: the score is final (gameplay
-                # is frozen) and writing a tiny JSON file is effectively
-                # instant and failure-tolerant, so this never delays the
-                # fade transition.
-                self.last_run_rank = self.high_scores.add(self.score)
+                # Record the run on the persistent leaderboard: the run is
+                # final (gameplay is frozen) and writing a tiny JSON file is
+                # effectively instant and failure-tolerant.
+                self.last_run_rank = self.high_scores.add(
+                    self.run_timer, result="Dead"
+                )
 
         ui.draw_score(self.screen, self.assets.font, self.score)
 

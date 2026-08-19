@@ -55,6 +55,8 @@ class Assets:
     player_img: pygame.Surface
     enemy_img: pygame.Surface
     bullet_img: pygame.Surface
+    enemy_bullet_img: pygame.Surface
+    gunner_img: pygame.Surface
 
     health_images: list[pygame.Surface] = field(default_factory=list)
     explosion_frames: list[pygame.Surface] = field(default_factory=list)
@@ -95,6 +97,24 @@ class Assets:
         bullet_img = pygame.transform.scale(
             pygame.image.load(resource_path("Assets/Bullet1.png")), settings.BULLET_IMG_SIZE
         )
+
+        # Enemy bullet: recolor the player bullet sprite to red by swapping
+        # the blue channel out and boosting red, then scale to the enemy
+        # bullet size.  The original is kept untouched for the player.
+        raw_ebullet = pygame.image.load(resource_path("Assets/Bullet1.png")).convert_alpha()
+        ebullet_recolored = raw_ebullet.copy()
+        # Tint red: set R=255, G=G*0.3, B=B*0.2 on non-transparent pixels.
+        for px in range(ebullet_recolored.get_width()):
+            for py in range(ebullet_recolored.get_height()):
+                r, g, b, a = ebullet_recolored.get_at((px, py))
+                if a > 0:
+                    ebullet_recolored.set_at((px, py), (255, int(g * 0.3), int(b * 0.2), a))
+        enemy_bullet_img = pygame.transform.scale(
+            ebullet_recolored, settings.ENEMY_BULLET_IMG_SIZE
+        )
+
+        # Gunner: reuse the enemy sprite.
+        gunner_img = enemy_img
 
         health_images = [
             pygame.image.load(resource_path(f"Assets/health_{i}.png")) for i in range(6)
@@ -168,6 +188,8 @@ class Assets:
             player_img=player_img,
             enemy_img=enemy_img,
             bullet_img=bullet_img,
+            enemy_bullet_img=enemy_bullet_img,
+            gunner_img=gunner_img,
             health_images=health_images,
             explosion_frames=explosion_frames,
             powerup_images=powerup_images,
