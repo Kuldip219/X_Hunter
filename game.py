@@ -175,7 +175,10 @@ class Game:
             ]
             self.enemies = []
 
-        # Freeze gameplay during the intro fade text.
+        # Freeze gameplay during the intro fade text. The state will
+        # transition to "level_intro" via fade.start() in the caller
+        # (menu click or restart handler), keeping the smooth fade from
+        # the previous screen.
         self._level_transition_pending = False
         self._level_intro_pending = True
         phase_num = self.current_level + 1
@@ -210,7 +213,7 @@ class Game:
             # When it finishes, handle any pending level transition.
             if self.fade_text.active:
                 self.fade_text.update()
-                if self.state == "game":
+                if self.state in ("game", "level_intro"):
                     self.fade_text.draw(self.screen, self.assets.big_font)
                 if not self.fade_text.active:
                     self._on_fade_text_done()
@@ -281,6 +284,12 @@ class Game:
         elif self.state == "game":
             self._draw_game()
 
+        elif self.state == "level_intro":
+            # Black screen with only the fade text — no gameplay HUD,
+            # entities, or background. The text itself is drawn later in
+            # run() (after the fade transition), same as for other states.
+            pass
+
         elif self.state == "options":
             self.options_screen.draw(self.screen, mouse_pos)
 
@@ -322,7 +331,7 @@ class Game:
             self.audio.play_music()
         elif new_state == "pause":
             self.audio.pause_music()
-        elif new_state in ("menu", "game_over", "high_scores", "controls"):
+        elif new_state in ("menu", "game_over", "high_scores", "controls", "level_intro"):
             self.audio.stop_music()
 
     def _on_fade_text_done(self) -> None:
@@ -331,8 +340,9 @@ class Game:
         to next level or end run).
         """
         if self._level_intro_pending:
-            # Intro text finished — unfreeze gameplay.
+            # Intro text finished — transition from level_intro to gameplay.
             self._level_intro_pending = False
+            self.fade.start("game")
         elif self._level_transition_pending:
             # Level finished text finished — advance to next level.
             self._level_transition_pending = False
@@ -418,7 +428,7 @@ class Game:
                 self.audio.play("menu_click")
             if action == "play":
                 self.reset_game()
-                self.fade.start("game")
+                self.fade.start("level_intro")
             elif action == "options":
                 self.fade.start("options")
             elif action == "exit":
@@ -457,7 +467,7 @@ class Game:
                 # If the player died in Level 2, restart from that level
                 # (run timer preserved). Otherwise full reset.
                 self.reset_game(from_checkpoint=self.checkpoint_level > 0)
-                self.fade.start("game")
+                self.fade.start("level_intro")
             elif action == "quit_to_menu":
                 self.fade.start("menu")
 

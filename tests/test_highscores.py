@@ -304,6 +304,14 @@ def test_entry_recorded_before_restart_resets(game):
     _die_after_scoring(game, 7)
     game._handle_mouse_click(game.game_over_menu.restart_rect.center)
     pump_fade(game)
+    assert game.state == "level_intro"
+    # Play through the intro text to reach gameplay.
+    for _ in range(300):
+        game.fade_text.update()
+        if not game.fade_text.active:
+            game._on_fade_text_done()
+            break
+    pump_fade(game)
     assert game.state == "game"
     assert game.score == 0
     assert game.last_run_rank is None

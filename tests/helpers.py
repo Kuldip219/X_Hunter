@@ -38,16 +38,25 @@ def pump(game, frames: int = 200, keys=None) -> None:
 
 
 def start_game(game) -> None:
-    """Click Play on the main menu and wait for the fade to finish."""
+    """Click Play on the main menu and wait for gameplay to begin.
+
+    Flow: menu -> fade -> level_intro -> fade text -> fade -> game.
+    Tests bypass the run() loop, so we pump the fade and text manually.
+    """
     assert game.state == "menu"
     game._handle_mouse_click(game.main_menu.play_rect.center)
+    # Phase 1: fade from menu to level_intro.
+    pump_fade(game)
+    assert game.state == "level_intro"
+    # Phase 2: play through the "Phase N" fade text until it finishes,
+    # then pump the fade from level_intro to game.
+    for _ in range(300):
+        game.fade_text.update()
+        if not game.fade_text.active:
+            game._on_fade_text_done()
+            break
     pump_fade(game)
     assert game.state == "game"
-    # Dismiss the "Phase N" intro fade text so gameplay can begin.
-    # In the real run() loop, the fade text plays as an overlay while the
-    # state is already "game"; tests bypass that loop, so we clear it here.
-    game.fade_text.active = False
-    game._level_intro_pending = False
 
 
 def place_enemy_over_player(game, dx: int = 10, dy: int = 5) -> "Enemy":

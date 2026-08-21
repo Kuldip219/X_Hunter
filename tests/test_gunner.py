@@ -143,7 +143,7 @@ class TestLevel2Spawning:
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
-        for _ in range(200):
+        for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
         game.fade_text.active = False
@@ -181,7 +181,7 @@ class TestLevel2Spawning:
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
-        for _ in range(200):
+        for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
         game.fade_text.active = False
@@ -247,7 +247,7 @@ class TestGunnerFiring:
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
-        for _ in range(200):
+        for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
         game.fade_text.active = False
@@ -267,7 +267,7 @@ class TestGunnerFiring:
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
-        for _ in range(200):
+        for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
         game.fade_text.active = False

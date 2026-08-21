@@ -144,12 +144,19 @@ class FadeText:
     FadeTransition pattern.
     """
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, start_delay: int | None = None) -> None:
         self.text = text
         self.alpha = 0
         self.phase = "in"  # "in" -> "hold" -> "out" -> done
         self.hold_counter = 0
         self.active = True
+        # Delay in frames before the text starts fading in. Lets the
+        # FadeTransition reach full black before text appears.
+        self.start_delay = (
+            start_delay if start_delay is not None
+            else getattr(settings, "FADE_TEXT_START_DELAY", 0)
+        )
+        self._delay_counter = 0
 
     def reset(self, text: str | None = None) -> None:
         """Restart the animation, optionally with new text."""
@@ -159,10 +166,15 @@ class FadeText:
         self.phase = "in"
         self.hold_counter = 0
         self.active = True
+        self._delay_counter = 0
 
     def update(self) -> None:
         """Advance one frame. Call once per rendered frame while active."""
         if not self.active:
+            return
+        # Count down the start delay before beginning the alpha animation.
+        if self._delay_counter < self.start_delay:
+            self._delay_counter += 1
             return
         if self.phase == "in":
             self.alpha = min(255, self.alpha + settings.FADE_TEXT_SPEED)

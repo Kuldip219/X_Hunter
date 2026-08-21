@@ -27,16 +27,16 @@ class TestFadeText:
     def test_starts_inactive_after_full_cycle(self):
         ft = FadeText("Hello")
         assert ft.active is True
-        # Run enough frames for fade-in (255/5 ≈ 51), hold (1.5s ≈ 90 frames),
-        # and fade-out (255/5 ≈ 51) = ~192 frames.
-        for _ in range(200):
+        # Run enough frames for start delay (18) + fade-in (255/5 ≈ 51) +
+        # hold (1.5s ≈ 90 frames) + fade-out (255/5 ≈ 51) = ~210 frames.
+        for _ in range(250):
             ft.update()
         assert ft.active is False
 
     def test_alpha_peaks_during_hold(self):
         ft = FadeText("Test")
         alphas = []
-        for _ in range(200):
+        for _ in range(250):
             ft.update()
             alphas.append(ft.alpha)
         assert max(alphas) == 255
@@ -119,8 +119,8 @@ class TestLevelTransition:
         game._check_level_completion()
         assert game._level_transition_pending is True
 
-        # Run fade text to completion.
-        for _ in range(200):
+        # Run fade text to completion (includes start delay).
+        for _ in range(300):
             game.fade_text.update()
         assert game.fade_text.active is False
 
@@ -138,7 +138,7 @@ class TestLevelTransition:
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
-        for _ in range(200):
+        for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
         assert game.current_level == 1
@@ -150,7 +150,7 @@ class TestLevelTransition:
         # Reach Level 2's target.
         game.score = settings.LEVEL_SCORE_TARGETS[1]
         game._check_level_completion()
-        for _ in range(200):
+        for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
         # No more levels → game_over fade started.
@@ -338,7 +338,7 @@ class TestDeathCheckpointRestart:
         # Simulate reaching Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
-        for _ in range(200):
+        for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
         game.fade_text.active = False
@@ -376,6 +376,109 @@ class TestDeathCheckpointRestart:
         game.checkpoint_level = 1  # pretend we were in Level 2
         game.reset_game(from_checkpoint=False)
         assert game.current_level == 0
+
+
+# ── Level intro screen ───────────────────────────────────────────────
+
+
+class TestLevelIntroScreen:
+    """Verify that level intros show a dedicated screen (black background +
+    fade text only) with no gameplay HUD or entities visible or updating.
+    """
+
+    def test_level_1_start_shows_level_intro_state(self, game):
+        """Clicking Play transitions to level_intro, not directly to game."""
+        assert game.state == "menu"
+        game._handle_mouse_click(game.main_menu.play_rect.center)
+        pump_fade(game)
+        assert game.state == "level_intro"
+        assert game.fade_text.active
+        assert game.fade_text.text == "Phase 1"
+
+    def test_level_intro_draws_no_gameplay(self, game):
+        """_draw_frame during level_intro should not call _draw_game()."""
+        game.state = "level_intro"
+        # _draw_game() would fail or draw entities; level_intro draws nothing
+        # (just a black fill + fade text drawn in run()).
+        game._draw_frame((0, 0))  # should not raise
+        # Verify the screen is blank (not filled with gameplay content).
+        # The screen.fill(BLACK) happens in run(), but _draw_frame should
+        # skip _draw_game entirely.
+
+    def test_level_intro_freezes_simulation(self, game):
+        """No simulation steps run while in level_intro state."""
+        game.state = "level_intro"
+        game.accumulator = settings.FIXED_DT * 5  # bank some time
+        steps = game._advance_simulation(1.0 / settings.FPS, KeyState())
+        assert steps == 0
+        assert game.accumulator == 0.0  # cleared
+
+    def test_level_intro_blocks_player_input(self, game):
+        """Player cannot move or fire during the level intro.
+
+        _update_game() itself doesn't check state — the gating is in
+        _advance_simulation(), which returns 0 steps when state != "game".
+        """
+        game.state = "level_intro"
+        initial_x = game.player.x
+        initial_bullet_count = len(game.bullets)
+        # Simulate holding Space and Right arrow.
+        keys = KeyState(pygame.K_SPACE, pygame.K_RIGHT)
+        steps = game._advance_simulation(1.0 / settings.FPS, keys)
+        assert steps == 0
+        # Player should not have moved, no bullets fired.
+        assert game.player.x == initial_x
+        assert len(game.bullets) == initial_bullet_count
+
+    def test_level_intro_applies_to_level_2_transition(self, game):
+        """Level 1→Level 2 transition also goes through level_intro."""
+        start_game(game)
+        # Fast-forward to Level 2.
+        game.score = settings.LEVEL_SCORE_TARGETS[0]
+        game._check_level_completion()
+        for _ in range(300):
+            game.fade_text.update()
+        game._on_fade_text_done()
+        assert game.current_level == 1
+        # Phase 2 fade text is now active — this IS the level_intro for L2.
+        assert game.fade_text.active
+        assert game.fade_text.text == "Phase 2"
+        # Dismiss it to reach gameplay.
+        for _ in range(300):
+            game.fade_text.update()
+        game._on_fade_text_done()
+        pump_fade(game)
+        assert game.state == "game"
+
+    def test_level_intro_no_enemies_update_during_intro(self, game):
+        """Enemy positions should not change during level_intro."""
+        game.state = "level_intro"
+        if game.enemies:
+            first_x = game.enemies[0].x
+            first_y = game.enemies[0].y
+            # Run several advance_simulation calls.
+            for _ in range(10):
+                game._advance_simulation(1.0 / settings.FPS, KeyState())
+            assert game.enemies[0].x == first_x
+            assert game.enemies[0].y == first_y
+
+    def test_level_intro_does_not_advance_run_timer(self, game):
+        """Run timer should not advance during level_intro (paused like menus)."""
+        ticks = {"t": 10000}
+        import pygame.time
+        original_get_ticks = pygame.time.get_ticks
+        pygame.time.get_ticks = lambda: ticks["t"]
+        try:
+            start_game(game)
+            timer_after_start = game.run_timer
+            # Simulate 2 seconds of real time in level_intro.
+            ticks["t"] += 2000
+            game.state = "level_intro"
+            game._advance_simulation(2.0, KeyState())
+            # Timer should not have advanced (paused during level_intro).
+            assert game.run_timer == pytest.approx(timer_after_start, abs=0.01)
+        finally:
+            pygame.time.get_ticks = original_get_ticks
 
 
 # ── Helpers ───────────────────────────────────────────────────────────

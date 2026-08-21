@@ -329,6 +329,11 @@ LEVEL_SCORE_TARGETS: list[int] = [200, 100]  # Level 1 target, Level 2 target (p
 FADE_TEXT_FONT_SIZE: int = 72
 FADE_TEXT_HOLD_SECONDS: float = 1.5  # how long the text stays fully visible
 FADE_TEXT_SPEED: int = 5  # alpha change per frame (255 / ~51 frames ≈ 0.85s fade in/out)
+# Delay before fade text begins its alpha animation (frames). Gives the
+# screen time to reach full black during a FadeTransition before the text
+# starts appearing, so the player sees: fade-to-black -> text -> text fades
+# out -> fade-to-gameplay (instead of text and menu overlapping).
+FADE_TEXT_START_DELAY: int = 18  # ~0.3s at 60 FPS
 FADE_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 
 # Run timer: measures total in-game time across all levels. Pauses on
