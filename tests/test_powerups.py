@@ -379,3 +379,92 @@ def test_all_powerup_icons_same_visual_size(game):
     assert max(max_dims) - min(max_dims) <= 8, (
         f"Content sizes too dissimilar: {content_sizes}"
     )
+
+
+# ── Icon content cropping (assets._content_crop) ──────────────────────
+#
+# _content_crop finds the largest contiguous block of opaque pixels, which is
+# how the icons get trimmed before being scaled to POWERUP_VISIBLE_SIZE. The
+# tests below use synthetic surfaces so they pin the AXIS CONVENTION rather
+# than the shipped art: pygame.surfarray arrays are indexed [x][y], and the
+# original code named its two axis sums the other way round.
+
+
+def _stencil(width, height, block, strays=()):
+    """A fully transparent surface with one opaque block and optional stray
+    opaque single pixels elsewhere."""
+    surf = pygame.Surface((width, height), pygame.SRCALPHA)
+    surf.fill((0, 0, 0, 0))
+    surf.fill((255, 255, 255, 255), block)
+    for pos in strays:
+        surf.set_at(pos, (255, 255, 255, 255))
+    return surf
+
+
+def test_content_crop_is_not_transposed(game):
+    """The crop must be (x, y, w, h), never (y, x, h, w).
+
+    surfarray arrays are indexed [x][y], so the FIRST axis is width. The
+    original code summed axis=1 into a variable it called "per_row" and
+    axis=0 into "per_col" - exactly backwards - and returned a transposed
+    rect. It never raised, because all three power-up source images happen
+    to be square, so the only symptom was a subtly wrong crop. A
+    deliberately non-square block catches it outright.
+    """
+    from assets import _content_crop
+
+    block = pygame.Rect(5, 3, 10, 6)
+    got = _content_crop(_stencil(40, 20, block))
+    assert tuple(got) == tuple(block), (
+        f"got {tuple(got)}, want {tuple(block)} "
+        f"(transposed would be {(block.y, block.x, block.h, block.w)})"
+    )
+
+
+def test_content_crop_ignores_stray_corner_pixels(game):
+    """The reason this helper exists at all instead of get_bounding_rect():
+    sheild.png carries isolated opaque pixels at opposite corners, which make
+    the naive bounding rect span the entire canvas."""
+    from assets import _content_crop
+
+    block = pygame.Rect(8, 4, 12, 9)
+    surf = _stencil(40, 20, block, strays=((0, 0), (39, 19)))
+    # The trap the helper exists to avoid:
+    assert tuple(surf.get_bounding_rect()) == (0, 0, 40, 20)
+    assert tuple(_content_crop(surf)) == tuple(block)
+
+
+def test_content_crop_leaves_the_surface_unlocked(game):
+    """Callers do surf.subsurface(crop_rect) immediately afterwards, which
+    needs an unlocked surface.
+
+    A guard, not a reproduction: the original used pixels_alpha(), which locks
+    the surface for as long as the returned array lives, and only got away
+    with it because CPython refcounting freed that local array on return.
+    array_alpha() copies, so the lock never exists in the first place.
+    """
+    from assets import _content_crop
+
+    surf = _stencil(40, 20, pygame.Rect(5, 3, 10, 6))
+    rect = _content_crop(surf)
+    assert not surf.get_locked()
+    surf.subsurface(rect)  # must not raise
+
+
+@pytest.mark.parametrize("kind,expected", [
+    (settings.POWERUP_KIND_SHIELD, (210, 180, 209, 256)),
+    (settings.POWERUP_KIND_RAPID_FIRE, (178, 111, 380, 514)),
+    (settings.POWERUP_KIND_HEALTH, (184, 210, 367, 316)),
+])
+def test_content_crop_of_the_shipped_icons(game, kind, expected):
+    """Golden crops for the real art, cross-checked against an independent
+    reference implementation after the axis fix. All three are non-square, so
+    a re-transposition would fail here too."""
+    from assets import _content_crop
+    from resource_path import resource_path
+
+    raw = pygame.image.load(
+        resource_path("Assets/" + settings.POWERUP_IMG_FILES[kind])
+    ).convert_alpha()
+    assert tuple(_content_crop(raw)) == expected
+    raw.subsurface(_content_crop(raw))  # the crop must be usable as-is

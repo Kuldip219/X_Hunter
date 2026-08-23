@@ -59,6 +59,46 @@ def start_game(game) -> None:
     assert game.state == "game"
 
 
+def pump_run(game, frames: int = 200) -> None:
+    """Advance Game's real state machine for `frames` frames.
+
+    Unlike pump_fade(), this drives Game._advance_transitions() - the exact
+    code run() uses - so the fade transition AND the fade text advance under
+    the production guards. Tests covering pause/quit during a level transition
+    need that fidelity: driving fade_text.update() by hand bypasses the guards
+    that keep a finishing overlay from overriding the player's own transition.
+    """
+    for _ in range(frames):
+        game._advance_transitions()
+
+
+def pump_run_until(game, predicate, cap: int = 1500) -> bool:
+    """Advance the real state machine until predicate(game) holds.
+
+    Returns whether it held within `cap` frames, so tests can assert on it
+    instead of silently passing when nothing ever happened.
+    """
+    for _ in range(cap):
+        if predicate(game):
+            return True
+        game._advance_transitions()
+    return predicate(game)
+
+
+def reach_level_2(game) -> None:
+    """Clear Level 1 by score and play the transition through to gameplay.
+
+    Leaves the game in the "game" state on Level 2 with no overlay active.
+    """
+    start_game(game)
+    game.score = game.level_score_target
+    game._check_level_completion()
+    assert pump_run_until(
+        game, lambda g: g.state == "game" and g.current_level == 1
+        and not g.fade_text.active
+    ), "never reached Level 2 gameplay"
+
+
 def place_enemy_over_player(game, dx: int = 10, dy: int = 5) -> "Enemy":
     """Replace the enemy list with a single enemy overlapping the player's
     sprite. The +5 dy accounts for enemy.update() moving it down 5px (300 px/s

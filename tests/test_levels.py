@@ -68,11 +68,23 @@ class TestLevelConstants:
         assert settings.LEVEL_COUNT == 2
         assert len(settings.LEVEL_SCORE_TARGETS) == settings.LEVEL_COUNT
 
+    def test_level_count_is_derived_from_targets(self):
+        """LEVEL_COUNT must not be independently maintained: when it was its
+        own literal it could exceed the target list, and reset_game() then
+        raised IndexError on RESTART after the final level was cleared."""
+        assert settings.LEVEL_COUNT == len(settings.LEVEL_SCORE_TARGETS)
+
     def test_level_1_target_is_200(self):
         assert settings.LEVEL_SCORE_TARGETS[0] == 200
 
-    def test_level_2_target_is_100(self):
-        assert settings.LEVEL_SCORE_TARGETS[1] == 100
+    def test_level_2_target_is_250(self):
+        assert settings.LEVEL_SCORE_TARGETS[1] == 250
+
+    def test_level_2_demands_more_than_level_1(self):
+        """Later levels must not be easier. Gunners also die slower than
+        falling enemies (~2.0 vs ~2.5 kills/sec measured), so an equal target
+        would make Level 2 the shorter half of the run."""
+        assert settings.LEVEL_SCORE_TARGETS[1] > settings.LEVEL_SCORE_TARGETS[0]
 
 
 # ── Level state after reset ───────────────────────────────────────────

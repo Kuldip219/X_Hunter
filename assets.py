@@ -22,9 +22,16 @@ def _content_crop(surf: pygame.Surface) -> pygame.Rect:
     main icon content by identifying the longest uninterrupted run of
     rows/columns that each contain at least one opaque pixel.
     """
-    alpha = pygame.surfarray.pixels_alpha(surf)
-    opaque_per_row = np.sum(alpha > 128, axis=1)  # type: ignore[no-untyped-call]
-    opaque_per_col = np.sum(alpha > 128, axis=0)  # type: ignore[no-untyped-call]
+    # surfarray arrays are indexed [x][y] - the FIRST axis is width, not
+    # height. So collapsing axis=1 (y) yields one count per COLUMN, and
+    # collapsing axis=0 (x) yields one count per ROW. Naming these the other
+    # way round silently produced a transposed crop rect; it never raised
+    # because every power-up source image happens to be square.
+    # array_alpha() returns a copy, so surf is not left locked for the
+    # subsurface() call the caller makes with this rect.
+    alpha = pygame.surfarray.array_alpha(surf)  # type: ignore[no-untyped-call]
+    opaque_per_col = np.sum(alpha > 128, axis=1)  # index = x
+    opaque_per_row = np.sum(alpha > 128, axis=0)  # index = y
 
     def _longest_run(mask: np.ndarray) -> tuple[int, int]:  # type: ignore[type-arg]
         runs: list[tuple[int, int, int]] = []
@@ -42,8 +49,8 @@ def _content_crop(surf: pygame.Surface) -> pygame.Rect:
         best = max(runs, key=lambda r: r[2])
         return (best[0], best[1])
 
-    y0, y1 = _longest_run(opaque_per_row > 0)
     x0, x1 = _longest_run(opaque_per_col > 0)
+    y0, y1 = _longest_run(opaque_per_row > 0)
     return pygame.Rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
 
 

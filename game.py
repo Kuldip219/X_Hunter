@@ -80,6 +80,10 @@ class Game:
         self.current_level: int = 0
         self.checkpoint_level: int = 0
         self.level_score_target: int = settings.LEVEL_SCORE_TARGETS[0]
+        # True once every level has been cleared. Distinguishes "reached
+        # game_over by winning" from "reached it by dying", which decides
+        # whether RESTART resumes at the checkpoint or starts a fresh run.
+        self.run_finished: bool = False
 
         # Run timer: total in-game seconds across all levels. Pauses on
         # non-game states (menu/pause/game_over) using the same paused_ms
@@ -113,9 +117,11 @@ class Game:
         back to Level 1.
 
         from_checkpoint=True: restart at the checkpoint level (Level 2 on
-        death in Level 2). Score resets, difficulty clock resets, but the
-        run timer keeps its accumulated value. The "Phase N" intro text
-        plays for the checkpoint level.
+        death in Level 2). Score resets and the run timer keeps its
+        accumulated value. NOTE: the difficulty clock is derived from the
+        preserved run timer, so a checkpoint restart resumes at the
+        difficulty the run had already reached rather than at baseline.
+        The "Phase N" intro text plays for the checkpoint level.
         """
         self.player = Player(settings.WIDTH // 2, settings.HEIGHT - 80)
         self.bullets = []
@@ -139,6 +145,9 @@ class Game:
         self.paused_ms = 0.0
         # A fresh run hasn't earned a leaderboard rank yet.
         self.last_run_rank = None
+        # Any previous run's "cleared everything" flag must not leak into
+        # this one, or RESTART would keep refusing to use the checkpoint.
+        self.run_finished = False
 
         # Level state: full reset goes to Level 0; checkpoint preserves
         # the level that was active when the player died.
@@ -204,19 +213,10 @@ class Game:
             self._handle_events(mouse_pos)
             self._draw_frame(mouse_pos)
 
-            new_state = self.fade.update()
-            if new_state is not None:
-                self._change_state(new_state)
+            self._advance_transitions()
             self.fade.draw(self.screen)
-
-            # Fade text overlay: updated and drawn every frame while active.
-            # When it finishes, handle any pending level transition.
-            if self.fade_text.active:
-                self.fade_text.update()
-                if self.state in ("game", "level_intro"):
-                    self.fade_text.draw(self.screen, self.assets.big_font)
-                if not self.fade_text.active:
-                    self._on_fade_text_done()
+            if self._fade_text_owns_screen():
+                self.fade_text.draw(self.screen, self.assets.big_font)
 
             pygame.display.update()
 
@@ -322,6 +322,40 @@ class Game:
             self._update_game(keys, dt)
         self._draw_frame(mouse_pos)
 
+    def _fade_text_owns_screen(self) -> bool:
+        """True while the fade text overlay may advance and be drawn.
+
+        The text only runs when the run genuinely owns the screen AND no state
+        change is already in flight. Both guards matter, because finishing the
+        text calls fade.start() itself (see _on_fade_text_done): letting it
+        complete while the player is pausing or quitting to the menu would
+        override wherever they asked to go. Freezing it mid-animation is
+        harmless - it resumes on unpause, and reset_game() clears it for a
+        new run.
+        """
+        return (
+            self.fade_text.active
+            and self.state in ("game", "level_intro")
+            and not self.fade.fading_out
+        )
+
+    def _advance_transitions(self) -> None:
+        """One frame of state-machine progress: the fade transition, then the
+        fade text overlay.
+
+        Split out of run() so the test suite can drive exactly this logic
+        without the render loop - the pause/quit-during-level-transition
+        regressions are only reproducible through the real guards.
+        """
+        new_state = self.fade.update()
+        if new_state is not None:
+            self._change_state(new_state)
+
+        if self._fade_text_owns_screen():
+            self.fade_text.update()
+            if not self.fade_text.active:
+                self._on_fade_text_done()
+
     def _change_state(self, new_state: str) -> None:
         """Apply a completed state transition and keep the music in sync."""
         self.state = new_state
@@ -347,15 +381,21 @@ class Game:
             # Level finished text finished — advance to next level.
             self._level_transition_pending = False
             self.current_level += 1
-            # Update checkpoint so death in this level restarts here.
-            self.checkpoint_level = self.current_level
             if self.current_level >= settings.LEVEL_COUNT:
-                # No more levels — end the run as Finished.
+                # No more levels — end the run as Finished. current_level now
+                # sits PAST the last level, so checkpoint_level is deliberately
+                # left on the level just cleared: reset_game() indexes
+                # LEVEL_SCORE_TARGETS[current_level], and advancing the
+                # checkpoint here used to make RESTART raise IndexError.
+                self.run_finished = True
                 self.fade.start("game_over")
                 self.last_run_rank = self.high_scores.add(
                     self.run_timer, result="Finished"
                 )
             else:
+                # Advance the checkpoint so death in the new level restarts
+                # here instead of at the beginning of the run.
+                self.checkpoint_level = self.current_level
                 # Start the next level: reset score, set new target,
                 # spawn the appropriate enemy type, show "Phase N" intro.
                 self.score = 0
@@ -381,12 +421,22 @@ class Game:
                 self._level_intro_pending = True
                 phase_num = self.current_level + 1
                 self.fade_text.reset(f"Phase {phase_num}")
+                # Leave gameplay for the dedicated black intro screen. Without
+                # this the state stays "game", so _draw_frame keeps rendering
+                # the ship, enemies, health bar and score behind the
+                # "Phase N" text - the exact thing level_intro exists to stop.
+                self.fade.start("level_intro")
 
     def _check_level_completion(self) -> None:
         """Check if the current level's score target has been reached.
         If so, freeze gameplay and show the "Level Finished" fade text.
         """
         if self._level_transition_pending or self._level_intro_pending:
+            return
+        if self.player.dead:
+            # A dying player's final bullet can still reach the target in the
+            # same simulation step that killed them. The death sequence owns
+            # the run from here, so don't queue a level transition behind it.
             return
         if self.score >= self.level_score_target:
             self._level_transition_pending = True
@@ -464,9 +514,13 @@ class Game:
             if action:
                 self.audio.play("menu_click")
             if action == "restart":
-                # If the player died in Level 2, restart from that level
-                # (run timer preserved). Otherwise full reset.
-                self.reset_game(from_checkpoint=self.checkpoint_level > 0)
+                # Resume at the checkpoint only when the run ended in death
+                # partway through. A COMPLETED run starts fresh from Level 1:
+                # its current_level sits past the last level, and its
+                # checkpoint points at a level the player already cleared.
+                self.reset_game(
+                    from_checkpoint=self.checkpoint_level > 0 and not self.run_finished
+                )
                 self.fade.start("level_intro")
             elif action == "quit_to_menu":
                 self.fade.start("menu")

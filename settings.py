@@ -321,11 +321,21 @@ BACK_IMG_SIZE: tuple[int, int] = (250, 80)
 # that triggers a transition to the next level (or ends the run if it's
 # the last implemented level). Score resets on transition; the run timer
 # continues across levels.
-LEVEL_COUNT: int = 2
-LEVEL_SCORE_TARGETS: list[int] = [200, 100]  # Level 1 target, Level 2 target (placeholder)
+#
+# Level 2 asks for MORE kills than Level 1 even though gunners die slower.
+# Measured headlessly with an aim-and-hold autopilot: Level 1 kills ~2.5
+# enemies/sec (200 target ~= 80 s), Level 2 only ~2.0 gunners/sec, because
+# the active gunner count scales at half the Level 1 rate (see _update_game).
+# 250 therefore makes Level 2 the longer half of the run (~125 s) on top of
+# gunners shooting back, instead of the shorter one it used to be at 100.
+LEVEL_SCORE_TARGETS: list[int] = [200, 250]  # Level 1 target, Level 2 target
+# Derived, never hand-maintained: when LEVEL_COUNT was its own literal it
+# could exceed the number of targets, and reset_game() then indexed past the
+# end of the list (IndexError on RESTART after clearing the final level).
+LEVEL_COUNT: int = len(LEVEL_SCORE_TARGETS)
 
 # Fade text: displayed centered on screen, fades in, holds, fades out.
-# Used for "Phase 1", "Level Finished", "Phase 2" (placeholder for L2).
+# Used for "Phase 1", "Level Finished", "Phase 2".
 FADE_TEXT_FONT_SIZE: int = 72
 FADE_TEXT_HOLD_SECONDS: float = 1.5  # how long the text stays fully visible
 FADE_TEXT_SPEED: int = 5  # alpha change per frame (255 / ~51 frames ≈ 0.85s fade in/out)
