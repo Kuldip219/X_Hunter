@@ -15,7 +15,7 @@ import settings
 from enemy import Enemy
 from enemy_bullet import EnemyBullet
 from gunner import GunnerEnemy
-from helpers import KeyState, pump_fade, start_game
+from helpers import KeyState, pump_fade, run_ship_exit, start_game
 
 
 # ── GunnerEnemy unit tests ────────────────────────────────────────────
@@ -143,6 +143,7 @@ class TestLevel2Spawning:
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
+        run_ship_exit(game)
         for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
@@ -181,6 +182,7 @@ class TestLevel2Spawning:
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
+        run_ship_exit(game)
         for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
@@ -247,6 +249,7 @@ class TestGunnerFiring:
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
+        run_ship_exit(game)
         for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
@@ -267,6 +270,7 @@ class TestGunnerFiring:
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
+        run_ship_exit(game)
         for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()

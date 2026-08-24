@@ -340,6 +340,13 @@ LEVEL_SCORE_TARGETS: list[int] = [200, 250]  # Level 1 target, Level 2 target
 # end of the list (IndexError on RESTART after clearing the final level).
 LEVEL_COUNT: int = len(LEVEL_SCORE_TARGETS)
 
+# Ship exit animation: when a level's score target is reached, the player
+# ship flies upward and off the top of the screen before the "Level Finished"
+# screen appears. Speed is in px/second (dt-based, consistent with the rest
+# of the movement system). At 600 px/s the 800px screen takes ~1.3s to
+# traverse — fast enough to feel decisive, slow enough to be readable.
+SHIP_EXIT_SPEED_PER_SEC: int = 600
+
 # Fade text: displayed centered on screen, fades in, holds, fades out.
 # Used for "Phase 1", "Level Finished", "Phase 2".
 FADE_TEXT_FONT_SIZE: int = 72

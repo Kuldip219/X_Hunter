@@ -1,6 +1,7 @@
 """Shared helpers for driving the Game class headlessly in tests."""
 
 import pygame
+import settings
 
 
 class KeyState:
@@ -85,14 +86,28 @@ def pump_run_until(game, predicate, cap: int = 1500) -> bool:
     return predicate(game)
 
 
+def run_ship_exit(game, dt: float = 1.0 / settings.FPS) -> None:
+    """Simulate the ship-exit animation (Phase 1 of level completion)
+    until the ship flies off-screen and the level transition begins."""
+    for _ in range(200):
+        game._update_and_draw((0, 0), dt=dt)
+        if not game._ship_exit_active:
+            break
+
+
 def reach_level_2(game) -> None:
     """Clear Level 1 by score and play the transition through to gameplay.
 
     Leaves the game in the "game" state on Level 2 with no overlay active.
+    Handles the ship-exit animation (Phase 1) by simulating gameplay steps
+    until the ship flies off-screen, then pumps the remaining transitions.
     """
     start_game(game)
     game.score = game.level_score_target
     game._check_level_completion()
+    assert game._ship_exit_active, "level completion should start ship exit"
+    run_ship_exit(game)
+    assert not game._ship_exit_active, "ship should have exited screen"
     assert pump_run_until(
         game, lambda g: g.state == "game" and g.current_level == 1
         and not g.fade_text.active

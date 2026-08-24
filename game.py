@@ -97,6 +97,11 @@ class Game:
         # transition completes.
         self._level_transition_pending: bool = False
 
+        # Flag set during the ship-exit animation (Phase 1 of level
+        # completion). While True the ship flies upward off-screen,
+        # enemy replenishment is stopped, and player input is blocked.
+        self._ship_exit_active: bool = False
+
         # Flag set at the start of a level to show "Phase N" intro text.
         # Cleared when the text finishes.
         self._level_intro_pending: bool = False
@@ -190,6 +195,7 @@ class Game:
         # the previous screen.
         self._level_transition_pending = False
         self._level_intro_pending = True
+        self._ship_exit_active = False
         phase_num = self.current_level + 1
         self.fade_text.reset(f"Phase {phase_num}")
 
@@ -243,12 +249,24 @@ class Game:
         Unlike the difficulty clock, it continues through level transitions
         (fade text overlays) since those happen while state == "game".
         """
-        if self.state != "game":
+        if self.state not in ("game", "level_finished"):
             self.accumulator = 0.0
             # Bank non-game time for both the difficulty clock and the run
             # timer so both freeze during menu/pause/game_over.
             self.paused_ms += raw_dt * 1000.0
             self.run_timer_paused_ms += raw_dt * 1000.0
+            return 0
+
+        # level_finished: same as level_intro — simulation frozen, but
+        # the run timer keeps counting (level transitions happen while
+        # state is "game" or "level_finished").
+        if self.state == "level_finished" and self.fade_text.active:
+            self.paused_ms += raw_dt * 1000.0
+            self.accumulator = 0.0
+            self.run_timer = (
+                (pygame.time.get_ticks() - self.run_start_ticks - self.run_timer_paused_ms)
+                / 1000.0
+            )
             return 0
 
         # While the fade text is active (level intro or level finished),
@@ -284,7 +302,7 @@ class Game:
         elif self.state == "game":
             self._draw_game()
 
-        elif self.state == "level_intro":
+        elif self.state in ("level_intro", "level_finished"):
             # Black screen with only the fade text — no gameplay HUD,
             # entities, or background. The text itself is drawn later in
             # run() (after the fade transition), same as for other states.
@@ -335,7 +353,7 @@ class Game:
         """
         return (
             self.fade_text.active
-            and self.state in ("game", "level_intro")
+            and self.state in ("game", "level_intro", "level_finished")
             and not self.fade.fading_out
         )
 
@@ -365,7 +383,7 @@ class Game:
             self.audio.play_music()
         elif new_state == "pause":
             self.audio.pause_music()
-        elif new_state in ("menu", "game_over", "high_scores", "controls", "level_intro"):
+        elif new_state in ("menu", "game_over", "high_scores", "controls", "level_intro", "level_finished"):
             self.audio.stop_music()
 
     def _on_fade_text_done(self) -> None:
@@ -429,9 +447,10 @@ class Game:
 
     def _check_level_completion(self) -> None:
         """Check if the current level's score target has been reached.
-        If so, freeze gameplay and show the "Level Finished" fade text.
+        If so, start the ship-exit animation (Phase 1): enemy replenishment
+        stops, player input is blocked, and the ship flies upward off-screen.
         """
-        if self._level_transition_pending or self._level_intro_pending:
+        if self._level_transition_pending or self._level_intro_pending or self._ship_exit_active:
             return
         if self.player.dead:
             # A dying player's final bullet can still reach the target in the
@@ -439,8 +458,14 @@ class Game:
             # the run from here, so don't queue a level transition behind it.
             return
         if self.score >= self.level_score_target:
-            self._level_transition_pending = True
-            self.fade_text.reset("Level Finished")
+            self._ship_exit_active = True
+            # Clear the field: no more enemies, bullets, or power-ups while
+            # the ship exits. The player is invulnerable during this phase.
+            self.enemies.clear()
+            self.gunners.clear()
+            self.enemy_bullets.clear()
+            self.bullets.clear()
+            self.powerups.clear()
 
     def _draw_mute_indicator(self) -> None:
         """Small 'MUTED' label in the top-right corner while audio is off."""
@@ -505,7 +530,7 @@ class Game:
             if action:
                 self.audio.play("menu_click")
             if action == "continue":
-                self.fade.start("game")
+                self.fade.start(getattr(self, "_state_before_pause", "game"))
             elif action == "quit_to_menu":
                 self.fade.start("menu")
 
@@ -549,10 +574,11 @@ class Game:
 
         # While the player is dead, gameplay is frozen: ESC cannot pause and
         # Space cannot fire until the game-over transition completes.
-        if key == pygame.K_ESCAPE and self.state == "game" and not self.player.dead:
+        if key == pygame.K_ESCAPE and self.state in ("game", "level_finished") and not self.player.dead:
+            self._state_before_pause = self.state
             self.fade.start("pause")
         elif key == pygame.K_ESCAPE and self.state == "pause":
-            self.fade.start("game")
+            self.fade.start(getattr(self, "_state_before_pause", "game"))
 
         if key == pygame.K_ESCAPE and self.state == "options":
             self.fade.start("menu")
@@ -576,6 +602,24 @@ class Game:
         # is triggered in _draw_game()). The player stays dead throughout; it
         # must never flip back to False and become movable/collidable again.
         if self.player.dead:
+            return
+
+        # Ship exit animation (Phase 1 of level completion): the ship flies
+        # upward off the top of the screen. Player input is blocked,
+        # enemies are cleared, and the player is invulnerable. When the
+        # ship reaches the top, transition to the "level_finished" state.
+        if self._ship_exit_active:
+            self.player.y -= settings.SHIP_EXIT_SPEED_PER_SEC * dt
+            # Run timer keeps counting during ship exit.
+            self.run_timer = (
+                (pygame.time.get_ticks() - self.run_start_ticks - self.run_timer_paused_ms)
+                / 1000.0
+            )
+            if self.player.y + self.player.height < 0:
+                self._ship_exit_active = False
+                self._level_transition_pending = True
+                self.fade.start("level_finished")
+                self.fade_text.reset("Level Finished")
             return
 
         # Clamp defensively (the main loop clamps too): a caller-provided dt

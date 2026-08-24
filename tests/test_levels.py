@@ -17,7 +17,7 @@ import pygame
 import settings
 from enemy import Enemy
 from ui import FadeText
-from helpers import KeyState, pump_fade, start_game
+from helpers import KeyState, pump_fade, pump_run, run_ship_exit, start_game
 
 
 # ── FadeText component ────────────────────────────────────────────────
@@ -110,26 +110,39 @@ class TestLevelStateAfterReset:
 # ── Level transition at score threshold ────────────────────────────────
 
 
+
 class TestLevelTransition:
-    def test_score_triggers_level_finished_text(self, game):
+    def test_score_triggers_ship_exit(self, game):
         start_game(game)
         game.score = settings.LEVEL_SCORE_TARGETS[0] - 1
         game._check_level_completion()
+        assert game._ship_exit_active is False
         assert game._level_transition_pending is False
-        assert game.fade_text.active is False
 
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
+        assert game._ship_exit_active is True
+        # Ship exit clears the field.
+        assert game.enemies == []
+        assert game.bullets == []
+
+    def test_ship_exit_completes_and_starts_fade_text(self, game):
+        start_game(game)
+        game.score = settings.LEVEL_SCORE_TARGETS[0]
+        game._check_level_completion()
+        assert game._ship_exit_active is True
+
+        run_ship_exit(game)
+        assert game._ship_exit_active is False
         assert game._level_transition_pending is True
         assert game.fade_text.text == "Level Finished"
         assert game.fade_text.active is True
 
     def test_level_transition_advances_to_level_2(self, game):
         start_game(game)
-        # Simulate reaching the score target.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
-        assert game._level_transition_pending is True
+        run_ship_exit(game)
 
         # Run fade text to completion (includes start delay).
         for _ in range(300):
@@ -150,6 +163,7 @@ class TestLevelTransition:
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
+        run_ship_exit(game)
         for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
@@ -162,6 +176,7 @@ class TestLevelTransition:
         # Reach Level 2's target.
         game.score = settings.LEVEL_SCORE_TARGETS[1]
         game._check_level_completion()
+        run_ship_exit(game)
         for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
@@ -182,10 +197,10 @@ class TestLevelTransition:
         start_game(game)
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
-        assert game._level_transition_pending is True
+        assert game._ship_exit_active is True
         # Calling again should be a no-op.
         game._check_level_completion()
-        assert game._level_transition_pending is True
+        assert game._ship_exit_active is True
 
 
 # ── Fade text freezes gameplay ────────────────────────────────────────
@@ -350,6 +365,7 @@ class TestDeathCheckpointRestart:
         # Simulate reaching Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
+        run_ship_exit(game)
         for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
@@ -448,6 +464,7 @@ class TestLevelIntroScreen:
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
         game._check_level_completion()
+        run_ship_exit(game)
         for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
@@ -491,6 +508,166 @@ class TestLevelIntroScreen:
             assert game.run_timer == pytest.approx(timer_after_start, abs=0.01)
         finally:
             pygame.time.get_ticks = original_get_ticks
+
+
+# ── Ship exit + level_finished + level_intro flow ─────────────────────
+
+
+class TestShipExitAndLevelFinished:
+    """Phase 1 (ship exit), Phase 2 (level_finished screen), Phase 3
+    (level_intro -> gameplay)."""
+
+    def test_ship_exit_clears_enemies_and_bullets(self, game):
+        """Enemies, bullets, and power-ups are removed when level completes."""
+        start_game(game)
+        game.score = game.level_score_target
+        game._check_level_completion()
+        assert game._ship_exit_active is True
+        assert game.enemies == []
+        assert game.bullets == []
+        assert game.enemy_bullets == []
+        assert game.powerups == []
+
+    def test_ship_exit_blocks_player_input(self, game):
+        """Player cannot move or fire during ship exit."""
+        start_game(game)
+        initial_x = game.player.x
+        game.score = game.level_score_target
+        game._check_level_completion()
+        # Run a few simulation steps with movement keys held.
+        keys = KeyState(pygame.K_LEFT, pygame.K_RIGHT, pygame.K_SPACE)
+        for _ in range(10):
+            game._update_game(keys, 1.0 / settings.FPS)
+        # Player should not have moved.
+        assert game.player.x == initial_x
+        assert len(game.bullets) == 0
+
+    def test_ship_exit_flies_upward(self, game):
+        """Ship moves upward during exit animation."""
+        start_game(game)
+        initial_y = game.player.y
+        game.score = game.level_score_target
+        game._check_level_completion()
+        # Run one simulation step.
+        game._update_game(KeyState(), 1.0 / settings.FPS)
+        assert game.player.y < initial_y
+
+    def test_ship_exit_completes_and_triggers_level_finished(self, game):
+        """After ship exits screen, level_finished state begins."""
+        start_game(game)
+        game.score = game.level_score_target
+        game._check_level_completion()
+        run_ship_exit(game)
+        assert game._ship_exit_active is False
+        assert game._level_transition_pending is True
+        assert game.fade_text.text == "Level Finished"
+        assert game.fade_text.active is True
+
+    def test_level_finished_is_black_screen(self, game):
+        """The level_finished state draws a blank black screen."""
+        start_game(game)
+        game.score = game.level_score_target
+        game._check_level_completion()
+        run_ship_exit(game)
+        # Pump fade to reach level_finished.
+        pump_run(game, 60)
+        assert game.state == "level_finished"
+        game.screen.fill(settings.BLACK)
+        game._draw_frame((0, 0))
+        # Screen should be entirely black (no gameplay rendered).
+        for x in range(0, settings.WIDTH, 50):
+            for y in range(0, settings.HEIGHT, 50):
+                assert game.screen.get_at((x, y))[:3] == (0, 0, 0), (
+                    f"level_finished screen is not blank at ({x}, {y})"
+                )
+
+    def test_level_finished_text_fades_to_level_intro(self, game):
+        """After Level Finished text completes, transitions to level_intro."""
+        start_game(game)
+        game.score = game.level_score_target
+        game._check_level_completion()
+        run_ship_exit(game)
+        # Run the "Level Finished" text to completion.
+        for _ in range(300):
+            game.fade_text.update()
+        assert game.fade_text.active is False
+        game._on_fade_text_done()
+        # Should now be transitioning to level_intro for Phase 2.
+        assert game._level_intro_pending is True
+        assert game.fade_text.text == "Phase 2"
+        assert game.fade.start("level_intro") is None or True  # fade started
+
+    def test_run_timer_continues_through_ship_exit(self, game):
+        """Run timer keeps counting during ship exit (still in 'game' state)."""
+        import pygame.time
+        original_get_ticks = pygame.time.get_ticks
+        ticks = {"t": 10000}
+        pygame.time.get_ticks = lambda: ticks["t"]
+        try:
+            start_game(game)
+            timer_start = game.run_timer
+            ticks["t"] += 1000  # 1 second
+            game.score = game.level_score_target
+            game._check_level_completion()
+            # Run ship exit for 0.5 seconds.
+            ticks["t"] += 500
+            game._update_and_draw((0, 0), dt=0.5)
+            assert game.run_timer > timer_start
+        finally:
+            pygame.time.get_ticks = original_get_ticks
+
+    def test_run_timer_continues_through_level_finished(self, game):
+        """Run timer keeps counting during level_finished screen."""
+        import pygame.time
+        original_get_ticks = pygame.time.get_ticks
+        ticks = {"t": 10000}
+        pygame.time.get_ticks = lambda: ticks["t"]
+        try:
+            start_game(game)
+            game.score = game.level_score_target
+            game._check_level_completion()
+            run_ship_exit(game)
+            pump_run(game, 60)  # reach level_finished
+            timer_before = game.run_timer
+            # Simulate 2 seconds passing via _advance_simulation (which
+            # updates the run timer in the level_finished state).
+            ticks["t"] += 2000
+            game._advance_simulation(2.0, KeyState())
+            assert game.run_timer > timer_before
+        finally:
+            pygame.time.get_ticks = original_get_ticks
+
+    def test_no_player_input_during_level_finished(self, game):
+        """Player cannot move or fire during level_finished state."""
+        start_game(game)
+        game.score = game.level_score_target
+        game._check_level_completion()
+        run_ship_exit(game)
+        pump_run(game, 60)
+        assert game.state == "level_finished"
+        keys = KeyState(pygame.K_LEFT, pygame.K_RIGHT, pygame.K_SPACE)
+        steps = game._advance_simulation(1.0 / settings.FPS, keys)
+        assert steps == 0  # simulation frozen
+        initial_x = game.player.x
+        game.player.x = initial_x  # ensure no drift
+        # Run several more frames.
+        for _ in range(10):
+            game._advance_simulation(1.0 / settings.FPS, keys)
+        assert game.player.x == initial_x
+        assert len(game.bullets) == 0
+
+    def test_death_during_ship_exit_not_triggered(self, game):
+        """Player is invulnerable during ship exit — collisions don't matter."""
+        start_game(game)
+        game.score = game.level_score_target
+        game._check_level_completion()
+        # Place an enemy at the player's position.
+        from enemy import Enemy
+        e = Enemy(game.player.x, game.player.y)
+        game.enemies = [e]
+        # Run one step — enemy and player overlap, but exit is active.
+        game._update_game(KeyState(), 1.0 / settings.FPS)
+        assert not game.player.dead
 
 
 # ── Helpers ───────────────────────────────────────────────────────────

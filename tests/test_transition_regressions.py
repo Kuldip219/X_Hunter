@@ -19,13 +19,21 @@ import pygame
 import pytest
 
 import settings
-from helpers import pump_run, pump_run_until, reach_level_2, start_game
+from helpers import pump_run, pump_run_until, reach_level_2, run_ship_exit, start_game
 
 
 def _clear_current_level(game):
-    """Hit the current level's score target, queuing "Level Finished"."""
+    """Hit the current level's score target and run the ship exit +
+    "Level Finished" text through to completion. After this call the game
+    is in the middle of transitioning to the next level's intro.
+    """
     game.score = game.level_score_target
     game._check_level_completion()
+    run_ship_exit(game)
+    # Run the "Level Finished" fade text to completion (Phase 2).
+    for _ in range(300):
+        game.fade_text.update()
+    game._on_fade_text_done()
 
 
 def _finish_the_run(game):
@@ -35,7 +43,7 @@ def _finish_the_run(game):
         _clear_current_level(game)
         assert pump_run_until(
             game, lambda g: g.state == "game_over" or (
-                g.state == "game" and not g.fade_text.active
+                g.state in ("game", "level_finished") and not g.fade_text.active
                 and g.score < g.level_score_target
             )
         ), "level transition never settled"
@@ -100,8 +108,11 @@ class TestRestartAfterFinishingRun:
 class TestPauseDuringLevelTransition:
     def _pause_mid_overlay(self, game):
         start_game(game)
-        _clear_current_level(game)
-        pump_run(game, 12)          # let the overlay get going
+        game.score = game.level_score_target
+        game._check_level_completion()
+        run_ship_exit(game)
+        # Advance fade from "game" to "level_finished", then let text start.
+        pump_run(game, 60)
         assert game.fade_text.active
         game._handle_keydown(pygame.K_ESCAPE)
         assert pump_run_until(game, lambda g: g.state == "pause")
@@ -137,8 +148,11 @@ class TestPauseDuringLevelTransition:
 class TestQuitToMenuDuringLevelTransition:
     def _quit_mid_overlay(self, game):
         start_game(game)
-        _clear_current_level(game)
-        pump_run(game, 12)
+        game.score = game.level_score_target
+        game._check_level_completion()
+        run_ship_exit(game)
+        # Advance fade from "game" to "level_finished", then let text start.
+        pump_run(game, 60)
         game._handle_keydown(pygame.K_ESCAPE)
         assert pump_run_until(game, lambda g: g.state == "pause")
         game._handle_mouse_click(game.pause_menu.quit_rect.center)
