@@ -436,6 +436,13 @@ class Game:
                 self.enemy_bullets = []
                 self.powerups = []
 
+                # Reposition the player to the default starting position.
+                # After ship exit, player.y is off-screen (< -80). Without
+                # this reset the player stays invisible for the entire next
+                # level.
+                self.player.x = settings.WIDTH // 2 - self.player.width // 2
+                self.player.y = settings.HEIGHT - 80
+
                 self._level_intro_pending = True
                 phase_num = self.current_level + 1
                 self.fade_text.reset(f"Phase {phase_num}")
@@ -466,6 +473,11 @@ class Game:
             self.enemy_bullets.clear()
             self.bullets.clear()
             self.powerups.clear()
+            # Clear the i-frame timer so the player is always visible during
+            # the exit animation. Without this, a frozen invulnerable_timer
+            # could lock _blink_visible() into an invisible phase for the
+            # entire exit, making the ship disappear instantly.
+            self.player.invulnerable_timer = 0.0
 
     def _draw_mute_indicator(self) -> None:
         """Small 'MUTED' label in the top-right corner while audio is off."""

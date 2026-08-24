@@ -670,6 +670,92 @@ class TestShipExitAndLevelFinished:
         assert not game.player.dead
 
 
+    def test_ship_exit_y_monotonically_decreases(self, game):
+        """Ship y must decrease every frame through the full exit — no
+        plateau, discontinuity, or second early-return path."""
+        start_game(game)
+        initial_y = game.player.y
+        game.score = game.level_score_target
+        game._check_level_completion()
+        dt = 1.0 / settings.FPS
+
+        # Run until the exit completes (up to 200 frames as a safety cap).
+        y_positions = [initial_y]
+        for _ in range(200):
+            game._update_game(KeyState(), dt)
+            y_positions.append(game.player.y)
+            if not game._ship_exit_active:
+                break
+
+        exit_frames = len(y_positions) - 1  # number of _update_game calls
+        assert exit_frames > 40, (
+            f"exit completed in only {exit_frames} frames — too fast to be visible"
+        )
+
+        # y must be strictly decreasing at every single step.
+        for i in range(1, len(y_positions)):
+            assert y_positions[i] < y_positions[i - 1], (
+                f"y did not decrease at step {i}: "
+                f"{y_positions[i-1]:.1f} -> {y_positions[i]:.1f}"
+            )
+
+        # The exit must NOT have completed before the ship was off-screen.
+        # Halfway through, the ship should still be visible (y > 0).
+        mid = len(y_positions) // 2
+        assert y_positions[mid] > 0, (
+            f"ship was off-screen at midpoint (step {mid}, y={y_positions[mid]:.1f})"
+        )
+
+        # After the last step, the ship IS off-screen and the transition
+        # flag has fired.
+        assert not game._ship_exit_active, "exit should be complete"
+        assert game._level_transition_pending, "transition flag should be set"
+        assert y_positions[-1] + game.player.height < 0, (
+            f"ship not off-screen at exit: y={y_positions[-1]:.1f}, "
+            f"height={game.player.height}"
+        )
+
+        # The frame count should roughly match the physics:
+        # travel = initial_y + height  (from start to just past y = -height)
+        # steps  = ceil(travel / (SHIP_EXIT_SPEED_PER_SEC * dt))
+        # Allow ±1 for floating-point rounding in 1/FPS.
+        import math
+        travel = initial_y + game.player.height
+        expected = math.ceil(travel / (settings.SHIP_EXIT_SPEED_PER_SEC * dt))
+        assert abs(exit_frames - expected) <= 1, (
+            f"exit took {exit_frames} frames, expected ~{expected} "
+            f"(travel={travel:.0f}, speed={settings.SHIP_EXIT_SPEED_PER_SEC}, "
+            f"dt={dt})"
+        )
+
+    def test_player_on_screen_at_level_2_start(self, game):
+        """Player must be repositioned to on-screen when Level 2 begins."""
+        start_game(game)
+        game.score = game.level_score_target
+        game._check_level_completion()
+        run_ship_exit(game)
+        # Ship is off-screen after exit.
+        assert game.player.y + game.player.height < 0
+        # Run fade text to completion.
+        for _ in range(300):
+            game.fade_text.update()
+        game._on_fade_text_done()
+        # Run fade to level_intro, then the Phase 2 text, then fade to game.
+        for _ in range(60):
+            game._advance_transitions()
+        for _ in range(300):
+            game.fade_text.update()
+        game._on_fade_text_done()
+        for _ in range(60):
+            game._advance_transitions()
+        assert game.state == "game" and game.current_level == 1
+        # Player must be visible on-screen.
+        assert game.player.y >= 0, (
+            f"player.y={game.player.y:.1f} is off-screen at Level 2 start"
+        )
+        assert game.player.y + game.player.height <= settings.HEIGHT
+
+
 # ── Helpers ───────────────────────────────────────────────────────────
 
 
