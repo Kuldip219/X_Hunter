@@ -309,8 +309,13 @@ simulation. Sprites: `shield_gold.png` + `bolt_gold.png` from Kenney
   health-bar segment (the game uses a segmented 5-HP bar,
   `PLAYER_START_HEALTH = 5`, rendered via `health_0..5.png`; there is no
   lives system). It is gated as a comeback item: excluded from the drop
-  pool while `health >= PLAYER_START_HEALTH * 0.8` (i.e. ≥ 4/5 — at or
-  above 80% it never drops), and drops normally below that.
+  pool while the bar is full, and eligible as soon as the player is missing
+  at least `HEALTH_POWERUP_MIN_MISSING_SEGMENTS` segments (default 1), so
+  hearts start dropping at 4/5 and stop again the moment the bar is back to
+  5/5. This replaced an earlier fractional gate
+  (`health >= PLAYER_START_HEALTH * 0.8`) which, because `5 * 0.8 == 4.0`,
+  excluded 4/5 too and so only ever dropped at 3/5 despite reading as
+  "below 80%"; counting whole missing segments matches the discrete bar.
   `Player.apply_powerup` clamps `health = min(health + 1, MAX)` so it can
   never overheal, and it has no timer. The extra-life `lives` counter and
   respawn-on-death mechanic were removed entirely (they existed only to

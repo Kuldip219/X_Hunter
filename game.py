@@ -765,12 +765,19 @@ class Game:
 
     def _maybe_drop_powerup(self, x: float, y: float) -> None:
         """Roll for a power-up drop at the given position (shared by both
-        falling-enemy and gunner kill paths)."""
+        falling-enemy and gunner kill paths).
+
+        The HEALTH kind is filtered out of the pool unless the player is
+        missing at least HEALTH_POWERUP_MIN_MISSING_SEGMENTS bar segments, so
+        hearts appear the moment the bar drops to 4/5 and stop as soon as it
+        is back to full. Integer segments, not a fraction of max health: the
+        bar is discrete, and the old fractional threshold silently landed a
+        segment lower than it read.
+        """
         if random.random() < settings.POWERUP_DROP_CHANCE:
             pool = settings.POWERUP_TYPES
-            if self.player.health >= (
-                settings.PLAYER_START_HEALTH * settings.HEALTH_POWERUP_MIN_HEALTH_FRACTION
-            ):
+            missing = settings.PLAYER_START_HEALTH - self.player.health
+            if missing < settings.HEALTH_POWERUP_MIN_MISSING_SEGMENTS:
                 pool = tuple(
                     k for k in settings.POWERUP_TYPES
                     if k != settings.POWERUP_KIND_HEALTH

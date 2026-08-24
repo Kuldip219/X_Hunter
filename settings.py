@@ -241,13 +241,19 @@ POWERUP_IMG_FILES: dict[str, str] = {
     POWERUP_KIND_HEALTH: "heart.png",
 }
 
-# The HEALTH power-up is a comeback item: it only becomes eligible to drop
-# once the player has lost at least 20% of their full health bar (health
-# strictly BELOW 80% of max). At full health or exactly 80% it is excluded
-# from the drop pool entirely, so it can never be farmed at high health.
-# Health is a segmented bar (PLAYER_START_HEALTH = 5 segments), so with the
-# default max this means health < 4.
-HEALTH_POWERUP_MIN_HEALTH_FRACTION: float = 0.8
+# The HEALTH power-up is a comeback item: it is excluded from the drop pool
+# until the player is actually missing health, so it can never be farmed at
+# full health. Health is a segmented bar (PLAYER_START_HEALTH = 5 segments),
+# so the window is measured in whole MISSING segments: with the default of 1
+# the heart starts dropping as soon as the bar falls to 4/5, and stops the
+# moment it is topped back up to 5/5.
+#
+# This replaces a HEALTH_POWERUP_MIN_HEALTH_FRACTION of 0.8. That excluded
+# the drop while health >= 5 * 0.8 == 4, so despite reading as "below 80%"
+# it never actually appeared until 3/5. Counting segments states the rule
+# directly: a fraction cannot express "missing at least N segments" without
+# depending on where the float multiply happens to land for a given max.
+HEALTH_POWERUP_MIN_MISSING_SEGMENTS: int = 1
 
 # Shield: full temporary invincibility for the duration. Unlike the post-hit
 # i-frame window (H2), the shield blocks even a would-be lethal hit - that

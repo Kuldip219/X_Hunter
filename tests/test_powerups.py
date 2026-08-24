@@ -2,9 +2,10 @@
 
 Covers the full contract:
 - power-ups only drop from destroyed enemies, respecting POWERUP_DROP_CHANCE,
-- the HEALTH power-up is gated by a health threshold: it is excluded from
-  the drop pool while the player is at or above 80% of their full health
-  bar, and drops normally below it,
+- the HEALTH power-up is gated by a missing-health rule: it is excluded from
+  the drop pool while the bar is full, and becomes eligible as soon as the
+  player is missing at least HEALTH_POWERUP_MIN_MISSING_SEGMENTS segments
+  (shipped default 1, so drops start at 4/5 and stop again at 5/5),
 - pickup is automatic on collision (no keypress) and removes the drop,
 - SHIELD grants full temporary invincibility (including lethal hits) that
   expires after its real-time duration,
@@ -23,7 +24,7 @@ import pytest
 import settings
 from bullet import Bullet
 from enemy import Enemy
-from helpers import KeyState, start_game
+from helpers import KeyState, reach_level_2, start_game
 from powerup import PowerUp
 
 
@@ -33,6 +34,35 @@ def _drop_enemy(game):
     game.enemies = [e]
     game.bullets = [Bullet(220, 320)]
     return e
+
+
+def _drop_gunner(game):
+    """Place a bullet guaranteed to destroy a gunner this frame (Level 2).
+
+    The mirror of _drop_enemy for the OTHER kill path. Both funnel through
+    _maybe_drop_powerup, so the health gate has to hold for both; nothing
+    covered the gunner side until these tests, and deleting its
+    ``self._maybe_drop_powerup(gunner.x, gunner.y)`` call left the entire
+    suite green.
+
+    The gunner is pinned to a stopped, mid-screen position first. Left as
+    spawned it is still descending toward a *random* stop_y, and the frame it
+    crosses that line ``update()`` snaps y back to stop_y - a jump of up to
+    ~90 px that can slide the gunner out from under the bullet, which would
+    make this test flaky rather than wrong. The cooldown is pre-charged so it
+    does not fire on the way out and dirty enemy_bullets.
+    """
+    assert game.gunners, "expected gunners on Level 2"
+    g = game.gunners[0]
+    game.gunners = [g]
+    g.x, g.y = 200.0, 200.0
+    g.stop_y = int(g.y)
+    g.stopped = True
+    g.fire_cooldown = settings.GUNNER_FIRE_COOLDOWN_SECONDS
+    game.bullets = [Bullet(g.x + g.width // 2 - 5, g.y + 15)]
+    game.enemy_bullets.clear()
+    game.powerups.clear()
+    return g
 
 
 # ---------------------------------------------------------------------- #
@@ -72,7 +102,7 @@ def test_no_drop_when_roll_fails(game, monkeypatch):
 
 def test_all_three_kinds_can_drop(game, monkeypatch):
     start_game(game)
-    # Below the health threshold so the HEALTH kind is actually in the pool.
+    # Missing health, so the HEALTH kind is actually in the pool.
     game.player.health = settings.PLAYER_START_HEALTH - 2
     monkeypatch.setattr(random, "random", lambda: 0.0)
     seen = set()
@@ -85,50 +115,174 @@ def test_all_three_kinds_can_drop(game, monkeypatch):
 
 
 # ---------------------------------------------------------------------- #
-# Health drop gating (the 80%-threshold rule)
+# Health drop gating (drops while a segment is missing, stops at full)
 # ---------------------------------------------------------------------- #
 
 
-def test_health_powerup_excluded_from_pool_at_or_above_80_percent(game, monkeypatch):
-    start_game(game)
-    monkeypatch.setattr(random, "random", lambda: 0.0)  # force a drop roll
+def _pool_on_next_drop(game, monkeypatch):
+    """Force one guaranteed drop and return the pool random.choice was handed.
+
+    Inspecting the pool rather than the resulting drop kind means a single
+    forced roll proves inclusion/exclusion outright, with no reliance on
+    random.choice happening to pick the health kind.
+    """
     pools = []
+    monkeypatch.setattr(random, "random", lambda: 0.0)  # roll always succeeds
     monkeypatch.setattr(
         random, "choice", lambda seq: pools.append(tuple(seq)) or "shield"
     )
-
-    # At full health (5/5 = 100%): HEALTH must not be in the drop pool.
     _drop_enemy(game)
     game._update_game(KeyState())
-    assert settings.POWERUP_KIND_HEALTH not in pools[-1]
-
-    # At exactly 80% of max (4/5): still excluded.
-    game.player.health = int(
-        settings.PLAYER_START_HEALTH * settings.HEALTH_POWERUP_MIN_HEALTH_FRACTION
-    )
-    _drop_enemy(game)
-    game._update_game(KeyState())
-    assert settings.POWERUP_KIND_HEALTH not in pools[-1]
-
-    # Below 80% (3/5): HEALTH is back in the pool.
-    game.player.health = (
-        int(settings.PLAYER_START_HEALTH * settings.HEALTH_POWERUP_MIN_HEALTH_FRACTION) - 1
-    )
-    _drop_enemy(game)
-    game._update_game(KeyState())
-    assert settings.POWERUP_KIND_HEALTH in pools[-1]
+    assert pools, "no drop was rolled"
+    return pools[-1]
 
 
-def test_health_powerup_drops_below_threshold(game, monkeypatch):
+def test_health_gate_default_is_one_missing_segment():
+    """Shipped tuning: one missing segment is enough to start the drops."""
+    assert settings.HEALTH_POWERUP_MIN_MISSING_SEGMENTS == 1
+
+
+def test_health_powerup_excluded_at_full_health(game, monkeypatch):
+    """At 5/5 the heart must never be offered - apply_powerup() clamps at max,
+    so it would be a guaranteed wasted drop."""
     start_game(game)
-    game.player.health = settings.PLAYER_START_HEALTH - 2  # 3/5, below 80%
+    assert game.player.health == settings.PLAYER_START_HEALTH
+    assert settings.POWERUP_KIND_HEALTH not in _pool_on_next_drop(game, monkeypatch)
+
+
+def test_health_powerup_appears_one_segment_below_full(game, monkeypatch):
+    """The boundary: a single missing segment (4/5) is enough to start drops.
+
+    This is the regression. The old gate excluded the heart while
+    ``health >= PLAYER_START_HEALTH * 0.8``, and 5 * 0.8 == 4.0, so 4/5 was
+    still excluded and the heart did not appear until the bar hit 3/5 -
+    despite the rule reading as "drops below 80%".
+    """
+    start_game(game)
+    game.player.health = settings.PLAYER_START_HEALTH - 1
+    assert settings.POWERUP_KIND_HEALTH in _pool_on_next_drop(game, monkeypatch)
+
+
+@pytest.mark.parametrize("missing", [2, 3, 4])
+def test_health_powerup_offered_at_every_level_below_full(game, monkeypatch, missing):
+    """Once eligible it stays eligible all the way down the bar."""
+    start_game(game)
+    game.player.health = settings.PLAYER_START_HEALTH - missing
+    assert game.player.health >= 1, "test setup would have killed the player"
+    assert settings.POWERUP_KIND_HEALTH in _pool_on_next_drop(game, monkeypatch)
+
+
+def test_health_powerup_stops_again_once_the_bar_is_refilled(game, monkeypatch):
+    """The other half of the rule: healing back to full re-excludes the heart.
+
+    Driven through the real pickup path instead of assigning health directly,
+    so the gate and Player.apply_powerup's max clamp are exercised together.
+    """
+    start_game(game)
+    game.player.health = settings.PLAYER_START_HEALTH - 1
+    assert settings.POWERUP_KIND_HEALTH in _pool_on_next_drop(game, monkeypatch)
+
+    game.player.apply_powerup(settings.POWERUP_KIND_HEALTH)
+    assert game.player.health == settings.PLAYER_START_HEALTH
+    assert settings.POWERUP_KIND_HEALTH not in _pool_on_next_drop(game, monkeypatch)
+
+
+@pytest.mark.parametrize("knob", [2, 3])
+def test_health_gate_boundary_moves_with_the_constant(game, monkeypatch, knob):
+    """The gate must key off whole missing segments read from the constant.
+
+    Each knob value has to place the boundary at exactly that many missing
+    segments. No hardcoded number and no fixed fraction of max health can
+    satisfy this file: with a 5-segment bar the sibling tests demand a gate
+    that excludes 5/5 and includes 4/5, which for a fraction f (eligible while
+    health < 5f) means f in (0.8, 1.0]; knob=3 demands exclusion at 3/5 and
+    inclusion at 2/5, i.e. f in (0.4, 0.6]. Those ranges do not overlap, so
+    only a gate that genuinely reads the constant passes both.
+
+    knob=3 is also what catches the shipped bug: the old fraction of 0.8 made
+    health 3/5 eligible, so it fails the exclusion assertion below.
+    """
+    monkeypatch.setattr(settings, "HEALTH_POWERUP_MIN_MISSING_SEGMENTS", knob)
+    start_game(game)
+
+    game.player.health = settings.PLAYER_START_HEALTH - (knob - 1)  # one short
+    assert game.player.health >= 1, "test setup would have killed the player"
+    assert settings.POWERUP_KIND_HEALTH not in _pool_on_next_drop(game, monkeypatch)
+
+    game.player.health = settings.PLAYER_START_HEALTH - knob  # on the boundary
+    assert game.player.health >= 1, "test setup would have killed the player"
+    assert settings.POWERUP_KIND_HEALTH in _pool_on_next_drop(game, monkeypatch)
+
+
+def test_health_powerup_actually_drops_when_eligible(game, monkeypatch):
+    """End to end: an eligible roll really does put a heart on the field.
+
+    The fake choice honours the pool it is handed instead of returning
+    "health" unconditionally - a fake that ignores its argument bypasses the
+    very filter under test and would pass even with the heart excluded.
+    """
+    start_game(game)
+    game.player.health = settings.PLAYER_START_HEALTH - 1  # 4/5
     monkeypatch.setattr(random, "random", lambda: 0.0)
-    monkeypatch.setattr(random, "choice", lambda seq: "health")
+    monkeypatch.setattr(
+        random,
+        "choice",
+        lambda seq: (
+            settings.POWERUP_KIND_HEALTH
+            if settings.POWERUP_KIND_HEALTH in seq
+            else seq[0]
+        ),
+    )
     _drop_enemy(game)
 
     game._update_game(KeyState())
     assert len(game.powerups) == 1
-    assert game.powerups[0].kind == "health"
+    assert game.powerups[0].kind == settings.POWERUP_KIND_HEALTH
+
+
+def test_gunner_kills_also_roll_for_drops(game, monkeypatch):
+    """Level 2 gunners drop power-ups too, not just Level 1 falling enemies.
+
+    Pre-existing gap, not one this change introduced: the gunner kill path had
+    no drop coverage at all, so deleting its _maybe_drop_powerup call left the
+    whole suite green and Level 2 would silently stop dropping anything.
+    """
+    reach_level_2(game)
+    monkeypatch.setattr(random, "random", lambda: 0.0)
+    monkeypatch.setattr(random, "choice", lambda seq: seq[0])
+    g = _drop_gunner(game)
+    before = game.score
+
+    game._update_game(KeyState())
+    assert len(game.powerups) == 1, "gunner kill produced no drop"
+    assert game.score == before + 1, "gunner was not actually destroyed"
+    assert g.y < 0, "gunner should have respawned above the screen"
+
+
+def test_health_gate_applies_on_the_gunner_path_too(game, monkeypatch):
+    """The new rule holds for the enemy that motivates it.
+
+    Gunners are the only enemy that shoots back, so 4/5 is the *normal* Level 2
+    state and the heart is the intended comeback - it would be a poor outcome
+    if the gate only worked on the path where health is rarely lost.
+    """
+    reach_level_2(game)
+    pools = []
+    monkeypatch.setattr(random, "random", lambda: 0.0)
+    monkeypatch.setattr(
+        random, "choice", lambda seq: pools.append(tuple(seq)) or seq[0]
+    )
+
+    assert game.player.health == settings.PLAYER_START_HEALTH
+    _drop_gunner(game)
+    game._update_game(KeyState())
+    assert pools, "gunner kill never reached the drop roll"
+    assert settings.POWERUP_KIND_HEALTH not in pools[-1]
+
+    game.player.health = settings.PLAYER_START_HEALTH - 1  # 4/5
+    _drop_gunner(game)
+    game._update_game(KeyState())
+    assert settings.POWERUP_KIND_HEALTH in pools[-1]
 
 
 # ---------------------------------------------------------------------- #
