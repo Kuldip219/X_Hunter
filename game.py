@@ -22,6 +22,7 @@ from menus import ControlsScreen, GameOverMenu, HighScoresMenu, MainMenu, Option
 from player import Player
 from powerup import PowerUp
 from settings_store import UserSettings
+from background import ParallaxBackground, StaticBackground
 
 
 class Game:
@@ -67,6 +68,11 @@ class Game:
         self.fade_text = FadeText("")
         self.shake_offset: tuple[int, int] = (0, 0)
         self.difficulty = Difficulty()
+
+        # Parallax backgrounds: one pair per level, updated during gameplay.
+        self.parallax = self.assets.parallax
+        # Static UI background: drawn behind all menu/UI screens.
+        self.static_bg = self.assets.static_bg
 
         self.running = True
         self.state = "menu"
@@ -199,6 +205,10 @@ class Game:
         phase_num = self.current_level + 1
         self.fade_text.reset(f"Phase {phase_num}")
 
+        # Load the correct parallax background pair for this level.
+        self.parallax.set_level(self.current_level)
+        self.parallax.reset()
+
     # ------------------------------------------------------------------ #
     # Main loop
     # ------------------------------------------------------------------ #
@@ -282,6 +292,12 @@ class Game:
             )
             return 0
 
+        # Update parallax scrolling while gameplay is active.
+        # This runs before the accumulator so the background moves
+        # smoothly even when the sim steps are behind.
+        if self.state == "game":
+            self.parallax.update(min(raw_dt, settings.MAX_FRAME_DT))
+
         self.accumulator += min(raw_dt, settings.MAX_FRAME_DT)
         steps = 0
         while self.accumulator >= settings.FIXED_DT:
@@ -297,6 +313,7 @@ class Game:
         ran; no interpolation between steps (kept simple, per design).
         """
         if self.state == "menu":
+            self.static_bg.draw(self.screen)
             self.main_menu.draw(self.screen, mouse_pos)
 
         elif self.state == "game":
@@ -309,18 +326,23 @@ class Game:
             pass
 
         elif self.state == "options":
+            self.static_bg.draw(self.screen)
             self.options_screen.draw(self.screen, mouse_pos)
 
         elif self.state == "pause":
+            self.static_bg.draw(self.screen)
             self.pause_menu.draw(self.screen, mouse_pos)
 
         elif self.state == "game_over":
+            self.static_bg.draw(self.screen)
             self.game_over_menu.draw(self.screen, mouse_pos)
 
         elif self.state == "high_scores":
+            self.static_bg.draw(self.screen)
             self.high_scores_menu.draw(self.screen, mouse_pos, self.last_run_rank)
 
         elif self.state == "controls":
+            self.static_bg.draw(self.screen)
             self.controls_screen.draw(self.screen, mouse_pos)
 
         # Global (non-intrusive) indication that all audio is muted.
@@ -446,6 +468,8 @@ class Game:
                 self._level_intro_pending = True
                 phase_num = self.current_level + 1
                 self.fade_text.reset(f"Phase {phase_num}")
+                # Load the next level's parallax background pair.
+                self.parallax.set_level(self.current_level)
                 # Leave gameplay for the dedicated black intro screen. Without
                 # this the state stays "game", so _draw_frame keeps rendering
                 # the ship, enemies, health bar and score behind the
@@ -846,6 +870,13 @@ class Game:
     # ------------------------------------------------------------------ #
 
     def _draw_game(self) -> None:
+        # Parallax background layers (far first, near on top).
+        # Ensure the correct level's layers are loaded (handles edge
+        # cases where draw runs before reset_game on a new level).
+        if self.parallax.current_level != self.current_level:
+            self.parallax.set_level(self.current_level)
+        self.parallax.draw(self.screen, self.shake_offset)
+
         self.player.draw(self.screen, self.assets.player_img, self.shake_offset)
 
         for enemy in self.enemies:

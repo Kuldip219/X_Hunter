@@ -5,6 +5,20 @@
 The three power-up icon sprites (`bolt.png`, `heart.png`, `sheild.png`) are
 the project creator's original artwork. No attribution is required.
 
+## Parallax backgrounds (procedurally generated)
+
+The background layers (`backgrounds/l1_far.png`, `l1_near.png`, `l2_far.png`,
+`l2_near.png`, `ui_bg.png`) were procedurally generated for this project using
+pygame drawing primitives (circles, ellipses, lines). They are original work
+released into the public domain — no attribution required.
+
+Design notes:
+- Deep navy-blue base with purple/magenta nebula wisps and scattered stars.
+- Level 1 layers: sparse dim stars (far) + brighter wisps/stars (near).
+- Level 2 layers: deeper space, magenta tint, faint planet silhouettes.
+- Static UI background (`ui_bg.png`): same palette with 2–3 visible planets.
+- All gameplay layers tile seamlessly top-to-bottom for vertical scrolling.
+
 ## Kenney — Space Shooter Redux (CC0)
 
 Source: https://kenney.nl/assets/space-shooter-redux

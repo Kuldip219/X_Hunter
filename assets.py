@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from resource_path import resource_path
 import numpy as np
 import pygame
+from background import ParallaxBackground, StaticBackground
 import settings
 
 
@@ -81,6 +82,9 @@ class Assets:
     score_img: pygame.Surface = None
     back_img: pygame.Surface = None
     controls_img: pygame.Surface = None
+
+    parallax: ParallaxBackground = None
+    static_bg: StaticBackground = None
 
     @classmethod
     def load(cls) -> "Assets":
@@ -189,6 +193,11 @@ class Assets:
         back_img = _load_menu_banner("Assets/back.png", settings.BACK_IMG_SIZE, font, "BACK")
         controls_img = _load_menu_banner("Assets/controls.png", settings.CONTROLS_IMG_SIZE, font, "CONTROLS")
 
+        # --- Backgrounds ---
+        parallax = ParallaxBackground()
+        static_bg = StaticBackground()
+        static_bg.load()
+
         return cls(
             font=font,
             big_font=big_font,
@@ -212,6 +221,8 @@ class Assets:
             score_img=score_img,
             back_img=back_img,
             controls_img=controls_img,
+            parallax=parallax,
+            static_bg=static_bg,
         )
 
 

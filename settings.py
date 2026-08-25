@@ -363,5 +363,27 @@ FADE_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 # non-game states (menu, pause, game_over) using the same paused_ms
 # pattern as the difficulty clock.
 
+# --- Parallax backgrounds ---
+# Two-layer vertical-scroll parallax per level, plus a static UI backdrop.
+# Each layer image is exactly one screen tall (WIDTH x HEIGHT) and tiles
+# seamlessly top-to-bottom. Two copies are drawn stacked; the scroll offset
+# wraps when a copy fully exits the bottom so the loop is invisible.
+# Speeds are in px/second (dt-based). The far layer scrolls slowly (dim,
+# sparse stars), the near layer scrolls faster (brighter, more detail).
+BG_L1_FAR_SPEED: int = 40   # px/s — dim, faint nebula
+BG_L1_NEAR_SPEED: int = 120  # px/s — brighter stars, wisps
+BG_L2_FAR_SPEED: int = 45   # px/s — slightly faster, deeper space
+BG_L2_NEAR_SPEED: int = 130  # px/s — magenta wisps, debris
+
+# Static UI background: drawn behind all menu/UI screens (non-scrolling).
+# Same palette family as gameplay backgrounds but includes planet(s).
+BG_UI_PATH: str = "Assets/backgrounds/ui_bg.png"
+
+# Gameplay background layer file paths (per level, far + near).
+BG_LAYERS: list[list[str]] = [
+    ["Assets/backgrounds/l1_far.png", "Assets/backgrounds/l1_near.png"],  # Level 1
+    ["Assets/backgrounds/l2_far.png", "Assets/backgrounds/l2_near.png"],  # Level 2
+]
+
 # --- Button hover offset (buttons nudge down 5px on hover) ---
 BUTTON_HOVER_OFFSET: int = 5
