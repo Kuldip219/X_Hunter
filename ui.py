@@ -113,7 +113,7 @@ def draw_health_bar(
     screen: pygame.Surface,
     health_images: list[pygame.Surface],
     health: int,
-    pos: tuple[int, int] = (10, 50),
+    pos: tuple[int, int] = (10, 10),
 ) -> None:
     screen.blit(health_images[health], pos)
 

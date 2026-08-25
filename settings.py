@@ -272,7 +272,7 @@ RAPID_FIRE_COOLDOWN_MULTIPLIER: float = 0.3
 SHIELD_AURA_COLOR: tuple[int, int, int] = (0, 220, 255)
 RAPID_FIRE_COLOR: tuple[int, int, int] = (255, 220, 0)
 POWERUP_STATUS_X: int = 10
-POWERUP_STATUS_Y: int = 135
+POWERUP_STATUS_Y: int = 95
 POWERUP_STATUS_ROW_GAP: int = 30
 
 # --- Effects ---
