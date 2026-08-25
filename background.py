@@ -28,12 +28,17 @@ class _ScrollingLayer:
 
     def __init__(self, image: pygame.Surface, speed_px_sec: int) -> None:
         self.image = image  # one screen-height tile
-        self.speed = speed_px_sec  # px/s downward
+        self.speed = speed_px_sec  # px/s (scrolls downward)
         self.offset_y: float = 0.0  # current scroll offset in pixels
 
     def update(self, dt: float) -> None:
-        """Advance the scroll offset by *dt* seconds."""
-        self.offset_y += self.speed * dt
+        """Advance the scroll offset by *dt* seconds.
+
+        The offset decreases (goes negative) so that ``y = -offset_y``
+        moves the tile downward on screen, matching the visual of the
+        ship flying forward through space.
+        """
+        self.offset_y -= self.speed * dt
         h = self.image.get_height()
         if h > 0:
             self.offset_y %= h

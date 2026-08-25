@@ -69,7 +69,8 @@ class MainMenu:
         ]
 
     def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
-        screen.fill(settings.MENU_BG_COLOR)
+        # NOTE: screen.fill removed — the static background is drawn by
+        # Game._draw_frame() before this method is called.
         screen.blit(self.assets.title_img, self.title_rect)
         _draw_button(screen, self.assets.play_img, self.play_rect, mouse_pos)
         _draw_button(screen, self.assets.options_img, self.options_rect, mouse_pos)
@@ -379,7 +380,8 @@ class ControlsScreen:
         return [("back", self.back_rect)]
 
     def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
-        screen.fill(settings.MENU_BG_COLOR)
+        # NOTE: screen.fill removed — the static background is drawn by
+        # Game._draw_frame() before this method is called.
         title = self.assets.big_font.render("CONTROLS", True, settings.WHITE)
         screen.blit(title, title.get_rect(center=(self.screen_width // 2, self.title_y)))
 
@@ -447,7 +449,8 @@ class HighScoresMenu:
     ) -> None:
         """Draw the ranked run list. The row at `highlight_rank` (the rank
         the just-finished run earned, if it qualified) is drawn highlighted."""
-        screen.fill(settings.MENU_BG_COLOR)
+        # NOTE: screen.fill removed — the static background is drawn by
+        # Game._draw_frame() before this method is called.
         title = self.assets.big_font.render("HIGH SCORES", True, settings.WHITE)
         screen.blit(title, title.get_rect(center=(self.screen_width // 2, 120)))
 

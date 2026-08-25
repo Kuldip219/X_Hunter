@@ -91,22 +91,30 @@ class TestWrapAround:
                 f"gap at bottom: y_top + 2h = {y_top + 2 * h} < {settings.HEIGHT}"
             )
 
-    def test_offset_decreases_when_wrapping(self):
-        """After a full wrap, offset is back in [0, h) — no discontinuity."""
+    def test_offset_wraps_full_tile(self):
+        """After a full tile of downward scroll, offset wraps via modulo."""
         layer = _make_layer(speed=300)
         h = layer.image.get_height()
         dt = 1.0 / settings.FPS
 
-        # Run enough frames to wrap at least once.
-        frames_to_wrap = int(h / (layer.speed * dt)) + 2
+        # Run enough frames for two full wraps.
+        frames_to_wrap = int(2 * h / (layer.speed * dt)) + 4
         offsets = []
         for _ in range(frames_to_wrap):
             layer.update(dt)
             offsets.append(layer.offset_y)
 
-        # The offset should have reached near h and then wrapped back to ~0.
-        assert max(offsets) > h * 0.5, "offset never got past halfway — too few frames?"
-        assert offsets[-1] < h * 0.5, "offset didn't wrap back after full tile"
+        # Offset starts at 0, decreases (wraps to near h via modulo on
+        # the first step), then continues decreasing toward 0, then
+        # wraps again — confirming downward scroll direction.
+        assert offsets[1] > h * 0.9, (
+            f"first step didn't wrap downward: offsets[1]={offsets[1]}"
+        )
+        # After two full wraps, offset should have wrapped at least once
+        # and be back near h (second wrap point).
+        assert offsets[-1] > h * 0.9, (
+            f"offset didn't complete second wrap: offsets[-1]={offsets[-1]}"
+        )
 
 
 # ------------------------------------------------------------------ #
@@ -226,7 +234,7 @@ class TestFreezeDuringNonGame:
         for _ in range(30):
             game._advance_simulation(1.0 / settings.FPS, KeyState())
         for i, layer in enumerate(game.parallax.layers):
-            assert layer.offset_y > offsets_before[i], (
+            assert layer.offset_y != offsets_before[i], (
                 f"Layer {i} froze during ship exit (sub-state of game)"
             )
 
@@ -337,6 +345,22 @@ class TestStaticUIBackground:
         game._handle_mouse_click(game.main_menu.play_rect.center)
         pump_fade(game)
         assert game.state == "level_intro"
+
+    def test_static_bg_drawn_on_main_menu(self):
+        """Regression: the main menu must show the static background,
+        not a solid MENU_BG_COLOR fill."""
+        game = _make_game()
+        assert game.state == "menu"
+        # Draw one frame — static_bg should paint before the menu.
+        game._draw_frame(game.main_menu.play_rect.center)
+        # Sample pixels in the background area (corners, away from buttons).
+        corners = [(10, 10), (590, 10), (10, 790), (590, 790)]
+        for x, y in corners:
+            r, g, b = game.screen.get_at((x, y))[:3]
+            # MENU_BG_COLOR is (30, 30, 30). If we see that, the bg was overwritten.
+            assert (r, g, b) != (30, 30, 30), (
+                f"Main menu pixel ({x},{y}) is MENU_BG_COLOR — static bg missing"
+            )
 
     def test_static_bg_fallback_on_missing_file(self, tmp_path, monkeypatch):
         """If the background file is missing, it falls back to a black surface."""
