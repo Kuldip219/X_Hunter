@@ -940,7 +940,6 @@ class Game:
                     self.run_timer, result="Dead"
                 )
 
-        ui.draw_score(self.screen, self.assets.font, self.score)
 
     def _draw_shield_aura(self) -> None:
         """A translucent cyan bubble around the ship while the shield is up,
