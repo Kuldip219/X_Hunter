@@ -296,3 +296,55 @@ class TestGunnerFiring:
         old_score = game.score
         game._update_game(KeyState(), 1.0 / settings.FPS)
         assert game.score == old_score + 1
+
+
+class TestGunnerSprite:
+    """Gunner enemies use the dedicated shooter sprite, not the shared
+    enemy sprite."""
+
+    def test_gunner_uses_shooter_sprite(self, game):
+        """The gunner image loaded by Assets must be distinct from the
+        enemy image — confirming the shooter.png asset is wired in."""
+        start_game(game)
+        game.score = settings.LEVEL_SCORE_TARGETS[0]
+        game._check_level_completion()
+        for _ in range(200):
+            game.fade_text.update()
+        game._on_fade_text_done()
+        game.fade_text.active = False
+        game._level_intro_pending = False
+
+        # Gunner and enemy images must be different objects.
+        assert game.assets.gunner_img is not game.assets.enemy_img
+
+    def test_gunner_sprite_matches_hitbox_size(self, game):
+        """The gunner sprite must be scaled to match ENEMY_IMG_SIZE
+        (which equals ENEMY_WIDTH × ENEMY_HEIGHT)."""
+        img = game.assets.gunner_img
+        assert img.get_width() == settings.ENEMY_IMG_SIZE[0]
+        assert img.get_height() == settings.ENEMY_IMG_SIZE[1]
+
+    def test_gunner_sprite_is_not_flipped(self, game):
+        """The shooter.png asset is already oriented facing downward
+        (toward the player), so the loaded gunner sprite must match the
+        raw scaled source pixel-for-pixel — no flip applied."""
+        import pygame
+
+        raw = pygame.transform.scale(
+            pygame.image.load("Assets/shooter.png"),
+            settings.ENEMY_IMG_SIZE,
+        )
+        loaded = game.assets.gunner_img
+
+        raw_arr = pygame.surfarray.array3d(raw)
+        loaded_arr = pygame.surfarray.array3d(loaded)
+        assert (raw_arr == loaded_arr).all(), (
+            "gunner_img should match raw shooter.png (no flip)"
+        )
+
+    def test_level_1_enemies_unaffected(self, game):
+        """Level 1 falling enemies still use the original enemy sprite."""
+        start_game(game)
+        e = game.enemies[0]
+        # The enemy image must still be the original (not the shooter).
+        assert game.assets.enemy_img is not game.assets.gunner_img

@@ -124,8 +124,13 @@ class Assets:
             ebullet_recolored, settings.ENEMY_BULLET_IMG_SIZE
         )
 
-        # Gunner: reuse the enemy sprite.
-        gunner_img = enemy_img
+        # Gunner: dedicated shooter sprite, scaled to match the enemy
+        # hitbox.  The asset is already oriented facing downward (toward
+        # the player), so no transform is needed.
+        gunner_img = pygame.transform.scale(
+            pygame.image.load(resource_path("Assets/shooter.png")),
+            settings.ENEMY_IMG_SIZE,
+        )
 
         health_images = [
             pygame.image.load(resource_path(f"Assets/health_{i}.png")) for i in range(6)

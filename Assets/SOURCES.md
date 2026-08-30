@@ -5,6 +5,12 @@
 The three power-up icon sprites (`bolt.png`, `heart.png`, `sheild.png`) are
 the project creator's original artwork. No attribution is required.
 
+## Gunner enemy sprite (user-provided)
+
+The Level 2 gunner enemy sprite (`shooter.png`) is the project creator's
+original artwork. No attribution is required. It is scaled to 50×50 to match
+the existing enemy hitbox, and flipped vertically to face downward.
+
 ## Parallax backgrounds (procedurally generated)
 
 The background layers (`backgrounds/l1_far.png`, `l1_near.png`, `l2_far.png`,

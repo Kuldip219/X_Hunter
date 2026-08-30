@@ -1,6 +1,6 @@
 # X Hunter — Project Audit & Work Log
 
-Status: **238 tests passing** · last updated August 24, 2026.
+Status: **278 tests passing** · last updated August 30, 2026.
 
 ## 1. Project snapshot
 
@@ -11,16 +11,20 @@ Status: **238 tests passing** · last updated August 24, 2026.
   `menus.py`/`ui.py` handle UI and screen effects; `assets.py` loads sprites/fonts;
   `settings.py` holds every constant; `audio.py` wraps the mixer; `difficulty.py`
   computes the invisible difficulty ramp; `highscores.py` manages the time-based
-  leaderboard; `settings_store.py` persists user volume settings.
+  leaderboard; `settings_store.py` persists user volume settings;
+  `background.py` provides two-layer parallax scrolling and a static UI backdrop.
 - **State machine:** `menu → level_intro → game ⇄ pause → game_over`, with dedicated
-  states for `options`, `high_scores`, and `controls` off the menu. Level transitions
-  route through `level_intro` (black screen + fade text) before resuming gameplay.
-  All state changes driven by `FadeTransition` (fade-out → state switch → fade-in).
-- **Levels:** two-level structure — Level 1 (falling enemies, score target 200) and
-  Level 2 (gunner enemies + enemy bullets, score target 100). Run timer tracks total
+  states for `options`, `high_scores`, `controls`, and `level_finished` off the menu.
+  Level transitions route through `level_intro` (black screen + fade text) before
+  resuming gameplay. On level completion, a ship-exit animation plays within the
+  `"game"` state before fading to `level_finished` ("Level Finished" text), then
+  into the next level's `level_intro`. All state changes driven by `FadeTransition`
+  (fade-out → state switch → fade-in).
+- **Levels:** two-level structure — Level 1 (falling enemies, score target 100) and
+  Level 2 (gunner enemies + enemy bullets, score target 150). Run timer tracks total
   time across both levels (pauses during menus/pause). Checkpoint restart on death:
   Level 1 death → full reset; Level 2 death → restart at Level 2, timer preserved.
-- **Code size:** ~2,200+ source lines across root modules; 100 tracked files
+- **Code size:** ~2,600+ source lines across root modules; 110+ tracked files
   (all source/assets/tests — build artifacts are untracked and ignored).
 - **Entry point:** `python main.py` (headless-safe: `SDL_VIDEODRIVER=dummy`).
 
@@ -495,9 +499,88 @@ when health drops to 4/5 (missing = 1) and stops at 5/5 (missing = 0).
 Added tests for the gating logic, boundary behavior, and segment-count
 correctness to prevent regression.
 
+### 3.38 Ship-exit phase + `level_finished` screen (`58849ea`, `705975e`) — **251 tests**
+**Ship exit:** when a level's score target is reached, the player ship flies upward
+and off the top of the screen under a scripted exit animation (`SHIP_EXIT_SPEED_PER_SEC =
+600`, ~1.3 s at 60 Hz). Handled as a boolean sub-flag `_ship_exit_active` inside the
+`"game"` state — player input, firing, and collision checks are frozen; enemies are
+cleared; the player is invulnerable. Parallax scrolling continues during ship exit
+(it is still live gameplay). The run timer keeps counting.
+
+**Level-finished screen:** once the ship clears y=0, the game fades into a new
+`"level_finished"` state — a dedicated black screen showing only "Level Finished"
+fade text (same FadeText component as level_intro). No gameplay entities rendered.
+After the text completes, transitions into the next level's `level_intro` flow.
+Applies to both Level 1 → Level 2 and Level 2 → game complete.
+
+**Player repositioning:** player x/y are reset to the default start position in
+`_on_fade_text_done()` when advancing levels, so the ship appears correctly on-screen
+at Level 2 start. Invulnerability timer is cleared at ship exit start to prevent
+blink-invisibility during the animation.
+
+**Pause during ship exit:** ESC on the `level_finished` screen works, using a
+`_state_before_pause` flag so resume returns to the correct pre-pause state.
+
+### 3.39 Parallax scrolling backgrounds + static UI backdrop (`f3671a3`, `db150d2`) — **272 tests**
+**New module:** `background.py` with three classes:
+- `_ScrollingLayer` — single tile, dt-based vertical scroll (downward), offset wraps
+  via modulo for seamless looping.
+- `ParallaxBackground` — owns far + near layers per level, swaps on level change,
+  updates only during `state == "game"` (including ship-exit sub-state).
+- `StaticBackground` — non-scrolling backdrop with file-missing fallback.
+
+**Gameplay layers (2-layer parallax per level):**
+
+| Layer | File | Speed | Visual |
+|-------|------|-------|--------|
+| L1 far | `l1_far.png` | 40 px/s | Dim, sparse stars, faint purple nebula |
+| L1 near | `l1_near.png` | 120 px/s | Brighter stars, purple wisps, sparkle stars |
+| L2 far | `l2_far.png` | 45 px/s | Deeper space, magenta tint |
+| L2 near | `l2_near.png` | 130 px/s | Magenta wisps, debris, faint planet silhouettes |
+
+All 600×800 (matching screen), seamlessly tileable top-to-bottom (verified: max
+pixel diff at seam ≤16/255). Scrolled downward (ship flying forward through space).
+
+**Static UI background:** `ui_bg.png` — same palette, 2–3 visible planets, drawn
+behind all menu/UI screens (main menu, options, high_scores, controls, pause,
+game_over, level_intro, level_finished). Originally drawn behind main menu but
+ MainMenu/ControlsScreen/HighScoresMenu overwrote it with `screen.fill(MENU_BG_COLOR)`;
+ this was fixed by removing the overwriting fills.
+
+**Assets:** procedurally generated using pygame drawing primitives for exact palette
+control and guaranteed seamless tiling. Deep navy-blue base, wispy purple/magenta
+nebula, white/pale-blue stars with brighter sparkle accents. Attributed as original
+work in `Assets/SOURCES.md`.
+
+### 3.40 Hide in-game score HUD (`01a0e9b`) — **276 tests**
+Removed `ui.draw_score()` call from `_draw_game()`. Score logic is completely
+untouched — increments on same triggers, level thresholds still fire, difficulty
+scaling still reads `game.score`, leaderboard still records the real score, score
+still resets between levels. Game-over and high-scores screens still display score
+(they render independently, not via `ui.draw_score`). No layout dependency found
+(score was at (10,10), health bar at (10,50), power-up status at y=135 — all
+independently positioned).
+
+### 3.41 HUD repositioning (`465c12c`) — **278 tests**
+Shifted health bar up by 40 px (from (10,50) to (10,10)) and power-up status up
+by 40 px (from y=135 to y=95 via `POWERUP_STATUS_Y`), closing the gap left by
+the removed score bar. `POWERUP_STATUS_ROW_GAP` unchanged (30 px). All HUD elements
+independent of each other — no cascading layout changes.
+
+### 3.42 Level-score-target test fix
+Updated `test_level_1_target_is_200`/`test_level_2_target_is_250` in
+`test_levels.py` to match the current values (`[100, 150]`). These tests were
+stale after the target values were changed but the tests were not updated.
+
 ## 5. Current repo state
 
 ```
+465c12c Shift HUD elements up (health bar & power-up)
+01a0e9b Hide in-game score HUD during gameplay
+db150d2 Fix parallax scroll + menu bg
+f3671a3 Add parallax & static backgrounds
+705975e Reset player position & visibility on level change
+58849ea Add ship-exit phase for level completion
 dfeeaf3 Gate health powerups by missing segments
 c49bfaf Fix asset crop & level-transition state machine
 276daca Add level intro screens before gameplay
@@ -532,14 +615,14 @@ ef34719 Add player i-frames, blinking and death freeze
 044af23 Initial commit
 ```
 
-- **Tracked files:** 100 (all source/assets/tests — build artifacts untracked).
-- **Tests:** 238 passing, 1 warning (the intentional mixer-failure test) in ~42 s.
+- **Tracked files:** 110+ (all source/assets/tests — build artifacts untracked).
+- **Tests:** 278 passing, 1 warning (the intentional mixer-failure test) in ~54 s.
 - **Source modules:** `game.py`, `player.py`, `enemy.py`, `gunner.py`, `bullet.py`,
   `enemy_bullet.py`, `explosion.py`, `powerup.py`, `menus.py`, `ui.py`, `assets.py`,
   `settings.py`, `audio.py`, `difficulty.py`, `highscores.py`, `settings_store.py`,
-  `resource_path.py`, `main.py`.
-- **Test files:** 16 test modules in `tests/` + `conftest.py` + `helpers.py`.
-- **Clean tree:** no uncommitted changes.
+  `resource_path.py`, `background.py`, `main.py`.
+- **Test files:** 18 test modules in `tests/` + `conftest.py` + `helpers.py`.
+- **Clean tree:** no uncommitted changes (except the test fix in §3.42, pending commit).
 - **History rewrite note:** The early commits (before `091fdf4`) were rewritten
   via `git rebase --root` (or equivalent). The original hashes (`f54a4a3` through
   `6c92ca9`) still exist in the git object store but are orphaned (not ancestors
@@ -569,11 +652,19 @@ ef34719 Add player i-frames, blinking and death freeze
 - **More levels** — Level 2 currently reuses existing gunner behavior; additional
   enemy types, boss fights, or procedural level generation could extend the
   two-level structure.
+- **Parallax background assets** — currently procedurally generated; replacing
+  with hand-drawn or Kenney CC0 pack art would improve visual quality.
+- **Level-score targets** — currently `[100, 150]`; may need further tuning
+  based on playtesting.
 
 Resolved since last update:
 - ~~Difficulty clock paused during pause~~ — fixed in §3.26.
 - ~~Power-up sprites + sizing + durations~~ — committed in §3.30.
 - ~~requirements.txt for numpy~~ — added in §3.30.
+- ~~Ship-exit animation + level-finished screen~~ — implemented in §3.38.
+- ~~Parallax scrolling backgrounds + static UI backdrop~~ — implemented in §3.39.
+- ~~Hide in-game score HUD~~ — implemented in §3.40.
+- ~~HUD repositioning after score hide~~ — implemented in §3.41.
 
 ## 7. High-score leaderboard (time-based, reworked in §3.33)
 

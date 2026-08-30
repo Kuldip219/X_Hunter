@@ -334,7 +334,7 @@ BACK_IMG_SIZE: tuple[int, int] = (250, 80)
 # the active gunner count scales at half the Level 1 rate (see _update_game).
 # 250 therefore makes Level 2 the longer half of the run (~125 s) on top of
 # gunners shooting back, instead of the shorter one it used to be at 100.
-LEVEL_SCORE_TARGETS: list[int] = [200, 250]  # Level 1 target, Level 2 target
+LEVEL_SCORE_TARGETS: list[int] = [100, 150]  # Level 1 target, Level 2 target
 # Derived, never hand-maintained: when LEVEL_COUNT was its own literal it
 # could exceed the number of targets, and reset_game() then indexed past the
 # end of the list (IndexError on RESTART after clearing the final level).

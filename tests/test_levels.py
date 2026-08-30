@@ -74,11 +74,11 @@ class TestLevelConstants:
         raised IndexError on RESTART after the final level was cleared."""
         assert settings.LEVEL_COUNT == len(settings.LEVEL_SCORE_TARGETS)
 
-    def test_level_1_target_is_200(self):
-        assert settings.LEVEL_SCORE_TARGETS[0] == 200
+    def test_level_1_target_is_100(self):
+        assert settings.LEVEL_SCORE_TARGETS[0] == 100
 
-    def test_level_2_target_is_250(self):
-        assert settings.LEVEL_SCORE_TARGETS[1] == 250
+    def test_level_2_target_is_150(self):
+        assert settings.LEVEL_SCORE_TARGETS[1] == 150
 
     def test_level_2_demands_more_than_level_1(self):
         """Later levels must not be easier. Gunners also die slower than
