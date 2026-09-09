@@ -82,6 +82,7 @@ class Assets:
     score_img: pygame.Surface = None
     back_img: pygame.Surface = None
     controls_img: pygame.Surface = None
+    edit_img: pygame.Surface = None
 
     parallax: ParallaxBackground = None
     static_bg: StaticBackground = None
@@ -197,6 +198,7 @@ class Assets:
         score_img = _load_menu_banner("Assets/score.png", settings.SCORE_IMG_SIZE, font, "HIGH SCORES")
         back_img = _load_menu_banner("Assets/back.png", settings.BACK_IMG_SIZE, font, "BACK")
         controls_img = _load_menu_banner("Assets/controls.png", settings.CONTROLS_IMG_SIZE, font, "CONTROLS")
+        edit_img = _load_menu_banner("Assets/edit.png", settings.EDIT_IMG_SIZE, font, "EDIT")
 
         # --- Backgrounds ---
         parallax = ParallaxBackground()
@@ -226,6 +228,7 @@ class Assets:
             score_img=score_img,
             back_img=back_img,
             controls_img=controls_img,
+            edit_img=edit_img,
             parallax=parallax,
             static_bg=static_bg,
         )
@@ -237,10 +240,12 @@ def _load_menu_banner(
     font: pygame.font.Font,
     label: str,
 ) -> pygame.Surface:
-    """Load a menu banner image scaled to FIT WITHIN `footprint`, preserving
-    its aspect ratio (never stretched/distorted). If the file is missing or
-    unreadable, fall back to a font-rendered button so the game still boots
-    - consistent with the game's non-fatal asset handling elsewhere.
+    """Load a menu banner image scaled to the exact `footprint` size.
+    All banner buttons (score, back, controls, edit) must render at the
+    same pixel dimensions so the layout is visually consistent. If the
+    file is missing or unreadable, fall back to a font-rendered button
+    so the game still boots - consistent with the game's non-fatal asset
+    handling elsewhere.
     """
     try:
         img = pygame.image.load(resource_path(path))
@@ -251,7 +256,4 @@ def _load_menu_banner(
         text = font.render(label, True, settings.WHITE)
         surface.blit(text, text.get_rect(center=(footprint[0] // 2, footprint[1] // 2)))
         return surface
-    w, h = img.get_size()
-    scale = min(footprint[0] / w, footprint[1] / h)
-    new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
-    return pygame.transform.scale(img, new_size)
+    return pygame.transform.scale(img, footprint)

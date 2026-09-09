@@ -324,14 +324,12 @@ def test_entry_recorded_before_restart_resets(game):
 # ---------------------------------------------------------------------- #
 
 
-def test_menu_banner_images_load_and_preserve_aspect_ratio(game):
+def test_menu_banner_images_load_and_match_footprint(game):
     sw, sh = game.assets.score_img.get_size()
-    assert sw <= settings.SCORE_IMG_SIZE[0] and sh <= settings.SCORE_IMG_SIZE[1]
-    assert abs(sw / sh - 1489 / 382) < 0.03
+    assert (sw, sh) == settings.SCORE_IMG_SIZE
 
     bw, bh = game.assets.back_img.get_size()
-    assert bw <= settings.BACK_IMG_SIZE[0] and bh <= settings.BACK_IMG_SIZE[1]
-    assert abs(bw / bh - 1491 / 354) < 0.03
+    assert (bw, bh) == settings.BACK_IMG_SIZE
 
 
 def test_menu_banner_falls_back_when_file_missing(monkeypatch, game):

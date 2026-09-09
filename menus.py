@@ -347,11 +347,22 @@ class OptionsScreen:
         _track_hover(self, mouse_pos)
 
 
+def _key_display_name(key: int) -> str:
+    """Uppercase display label for a keycode, e.g. K_SPACE -> 'SPACE'."""
+    return pygame.key.name(key).upper()
+
+
 class ControlsScreen:
-    """Read-only keybind reference, moved off the Options screen so it can
-    breathe: one binding per row in a single column. Reached only via the
-    Options screen (controls.png button); its BACK button (back.png) returns
-    to Options, one level up - same convention as the high-scores screen.
+    """Keybind reference + editable bindings. Reached only via the Options
+    screen (controls.png button); its BACK button (back.png) returns to
+    Options, one level up - same convention as the high-scores screen.
+
+    The EDIT button (edit.png) puts the screen into edit mode: every
+    keyboard-bound row becomes clickable, and clicking a row enters an
+    "awaiting input" state for that row. The next keypress becomes the new
+    binding (swap-with-conflict via UserSettings.rebind); ESC cancels the
+    capture or exits edit mode. Bindings persist via the shared store, so
+    they survive restarts and take effect in-game immediately.
     """
 
     def __init__(
@@ -360,24 +371,71 @@ class ControlsScreen:
         screen_width: int,
         screen_height: int,
         audio=None,
+        store=None,
     ) -> None:
         self.assets = assets
         self.audio = audio
         self._last_hovered = None
         self.screen_width = screen_width
         self.screen_height = screen_height
+        self.store = store
         self.back_img = assets.back_img
         self.back_rect = self.back_img.get_rect(
             center=(screen_width // 2, screen_height - 70)
+        )
+        self.edit_img = assets.edit_img
+        self.edit_rect = self.edit_img.get_rect(
+            center=(screen_width // 2, settings.CONTROLS_EDIT_Y)
         )
         self.title_y = settings.CONTROLS_TITLE_Y
         self.row_ys = [
             settings.CONTROLS_ROWS_TOP + i * settings.CONTROLS_ROW_GAP
             for i in range(len(settings.CONTROLS))
         ]
+        # Click targets for the rebindable rows (edit mode only).
+        self.row_rects = [
+            pygame.Rect(
+                settings.CONTROLS_ACTION_X - 10,
+                y - 22,
+                settings.CONTROLS_KEY_X - settings.CONTROLS_ACTION_X + 40,
+                44,
+            )
+            for y in self.row_ys
+        ]
+        # Edit-mode state.
+        self.edit_mode = False
+        self.awaiting_row: Optional[int] = None  # index into settings.CONTROLS
+
+    # ------------------------------------------------------------------ #
+    # Edit-mode state
+    # ------------------------------------------------------------------ #
+
+    def in_edit_mode(self) -> bool:
+        return self.edit_mode
+
+    def toggle_edit_mode(self) -> None:
+        """Enter or leave edit mode; a pending capture is always dropped."""
+        self.edit_mode = not self.edit_mode
+        self.awaiting_row = None
+
+    def _bindings(self) -> dict[str, int]:
+        if self.store is not None:
+            return self.store.key_bindings
+        return settings.DEFAULT_KEY_BINDINGS
+
+    def _key_label(self, action: str) -> str:
+        """Display label for an action's current binding ('RESTART button'
+        for the non-keyboard restart row)."""
+        if action == "restart":
+            return "RESTART button"
+        return _key_display_name(self._bindings()[action])
+
+    # ------------------------------------------------------------------ #
+    # Rendering
+    # ------------------------------------------------------------------ #
 
     def _buttons(self) -> list[tuple[str, pygame.Rect]]:
-        return [("back", self.back_rect)]
+        return [("edit", self.edit_rect), ("back", self.back_rect)]
 
     def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
         # NOTE: screen.fill removed — the static background is drawn by
@@ -385,22 +443,88 @@ class ControlsScreen:
         title = self.assets.big_font.render("CONTROLS", True, settings.WHITE)
         screen.blit(title, title.get_rect(center=(self.screen_width // 2, self.title_y)))
 
-        for (action, key), y in zip(settings.CONTROLS, self.row_ys):
-            action_img = self.assets.font.render(action, True, settings.WHITE)
+        for i, (action, label) in enumerate(settings.CONTROLS):
+            y = self.row_ys[i]
+            is_awaiting = self.edit_mode and self.awaiting_row == i
+            clickable = self.edit_mode and action in settings.REBINDABLE_ACTIONS
+            hovered = clickable and self.row_rects[i].collidepoint(mouse_pos)
+
+            # Highlight the awaiting row so it's obvious the game is waiting
+            # for a keypress, not frozen.
+            label_color = settings.SCORE_COLOR if is_awaiting else settings.WHITE
+            action_img = self.assets.font.render(label, True, label_color)
             screen.blit(
                 action_img,
                 action_img.get_rect(midleft=(settings.CONTROLS_ACTION_X, y)),
             )
-            key_img = self.assets.font.render(key, True, settings.LIGHT_GRAY)
+
+            if is_awaiting:
+                key_text = "Press any key..."
+            else:
+                key_text = self._key_label(action)
+            key_color = (
+                settings.SCORE_COLOR if is_awaiting or hovered else settings.LIGHT_GRAY
+            )
+            key_img = self.assets.font.render(key_text, True, key_color)
             screen.blit(
                 key_img,
                 key_img.get_rect(midright=(settings.CONTROLS_KEY_X, y)),
             )
 
+        # EDIT button nudges down while hovered, like every other button;
+        # draw it on top of the rows while in edit mode so the state is
+        # visible (the button itself is the toggle).
+        if self.edit_mode:
+            screen.blit(self.edit_img, self.edit_rect)
+        _draw_button(screen, self.edit_img, self.edit_rect, mouse_pos)
         _draw_button(screen, self.back_img, self.back_rect, mouse_pos)
         _track_hover(self, mouse_pos)
 
+    # ------------------------------------------------------------------ #
+    # Input
+    # ------------------------------------------------------------------ #
+
+    def handle_keydown(self, key: int) -> None:
+        """Edit-mode keyboard input. A row awaiting input captures the next
+        keypress (ESC cancels by default); ESC otherwise exits edit mode.
+
+        Exception: if the action being rebound already defaults to ESC
+        (back, pause — see settings.ESC_DEFAULT_ACTIONS), ESC is allowed as
+        a capture so the user can return to the default binding after
+        rebound it away. All other actions treat ESC as cancel."""
+        if self.awaiting_row is not None:
+            action = settings.CONTROLS[self.awaiting_row][0]
+            self.awaiting_row = None
+            if key in settings.RESERVED_KEYS:
+                if action not in settings.ESC_DEFAULT_ACTIONS:
+                    return  # ESC cancels the capture; stay in edit mode
+                # Otherwise fall through: ESC can be rebound for back/pause.
+            if self.store is not None:
+                self.store.rebind(action, key)
+                self.store.save()
+            return
+        if key in settings.RESERVED_KEYS:
+            self.toggle_edit_mode()
+
     def handle_click(self, mouse_pos: tuple[int, int]) -> Optional[str]:
+        if self.edit_mode:
+            # While editing, BACK exits edit mode instead of navigating.
+            if self.back_rect.collidepoint(mouse_pos):
+                self.toggle_edit_mode()
+                return "edit"
+            for i, (action, _label) in enumerate(settings.CONTROLS):
+                if action in settings.REBINDABLE_ACTIONS and self.row_rects[i].collidepoint(
+                    mouse_pos
+                ):
+                    self.awaiting_row = i
+                    return "edit"
+            if self.edit_rect.collidepoint(mouse_pos):
+                self.toggle_edit_mode()
+                return "edit"
+            return None
+        if self.edit_rect.collidepoint(mouse_pos):
+            self.toggle_edit_mode()
+            return "edit"
         if self.back_rect.collidepoint(mouse_pos):
             return "back"
         return None

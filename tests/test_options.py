@@ -172,14 +172,14 @@ def test_persisted_volumes_applied_on_launch(tmp_path, monkeypatch):
 
 
 def test_controls_reference_matches_real_bindings():
-    rows = dict(settings.CONTROLS)
     # Sourced from the real input handling: K_LEFT/K_RIGHT (player.py),
     # K_SPACE held (game.py), K_m and K_ESCAPE (game.py _handle_keydown).
-    assert rows["Move"] == "LEFT / RIGHT"
-    assert rows["Fire (hold)"] == "SPACE"
-    assert rows["Pause / Resume"] == "ESC"
-    assert rows["Mute / Unmute"] == "M"
-    assert rows["Back (menus)"] == "ESC"
+    assert settings.DEFAULT_KEY_BINDINGS["move_left"] == pygame.K_LEFT
+    assert settings.DEFAULT_KEY_BINDINGS["move_right"] == pygame.K_RIGHT
+    assert settings.DEFAULT_KEY_BINDINGS["fire"] == pygame.K_SPACE
+    assert settings.DEFAULT_KEY_BINDINGS["mute"] == pygame.K_m
+    assert settings.DEFAULT_KEY_BINDINGS["pause"] == pygame.K_ESCAPE
+    assert settings.DEFAULT_KEY_BINDINGS["back"] == pygame.K_ESCAPE
 
 
 def test_options_screen_draws_without_crashing(game):

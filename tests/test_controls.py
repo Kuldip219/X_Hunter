@@ -64,17 +64,24 @@ def test_controls_to_options_to_menu_loop(game):
 
 
 def test_controls_screen_content_matches_real_bindings(game):
-    """The screen renders exactly the bindings from settings.CONTROLS (the
-    source of truth pulled from the real input-handling code)."""
+    """The screen renders exactly the actions from settings.CONTROLS (the
+    source of truth pulled from the real input-handling code), with the
+    live key for each action."""
     screen = game.controls_screen
     assert len(screen.row_ys) == len(settings.CONTROLS)
-    rows = dict(settings.CONTROLS)
-    assert rows["Move"] == "LEFT / RIGHT"
-    assert rows["Fire (hold)"] == "SPACE"
-    assert rows["Pause / Resume"] == "ESC"
-    assert rows["Mute / Unmute"] == "M"
-    assert rows["Back (menus)"] == "ESC"
-    assert rows["Restart"] == "RESTART button"
+    actions = [action for action, _label in settings.CONTROLS]
+    assert "move_left" in actions and "move_right" in actions
+    assert "fire" in actions and "pause" in actions
+    assert "mute" in actions and "back" in actions
+    assert "restart" in actions
+    # The live bindings drive the display labels.
+    from menus import _key_display_name
+
+    for action in settings.REBINDABLE_ACTIONS:
+        assert screen._key_label(action) == _key_display_name(
+            screen._bindings()[action]
+        )
+    assert screen._key_label("restart") == "RESTART button"
     # Renders without crashing.
     _enter_controls(game)
     game._update_and_draw((0, 0))
@@ -95,12 +102,10 @@ def test_controls_rows_single_column_generous_spacing(game):
 # ---------------------------------------------------------------------- #
 
 
-def test_controls_banner_loads_and_preserves_aspect_ratio(game):
-    # controls.png is 1168x273; it must fit the 250x80 footprint without
-    # distortion.
+def test_controls_banner_loads_and_matches_footprint(game):
+    # controls.png must render at the exact footprint size.
     w, h = game.assets.controls_img.get_size()
-    assert w <= settings.CONTROLS_IMG_SIZE[0] and h <= settings.CONTROLS_IMG_SIZE[1]
-    assert abs(w / h - 1168 / 273) < 0.05  # pixel truncation allows ~3%
+    assert (w, h) == settings.CONTROLS_IMG_SIZE
 
 
 def test_controls_banner_falls_back_when_file_missing(monkeypatch, game):

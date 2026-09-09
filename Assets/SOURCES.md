@@ -11,6 +11,12 @@ The Level 2 gunner enemy sprite (`shooter.png`) is the project creator's
 original artwork. No attribution is required. It is scaled to 50×50 to match
 the existing enemy hitbox, and flipped vertically to face downward.
 
+## Controls-screen edit button (user-provided)
+
+The EDIT button (`edit.png`) used to enter key-rebinding edit mode on the
+Controls screen is the project creator's original artwork. No attribution
+is required.
+
 ## Parallax backgrounds (procedurally generated)
 
 The background layers (`backgrounds/l1_far.png`, `l1_near.png`, `l2_far.png`,

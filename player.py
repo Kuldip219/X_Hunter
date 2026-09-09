@@ -17,6 +17,7 @@ class Player:
         height: int = settings.PLAYER_HEIGHT,
         speed: float = settings.PLAYER_SPEED_PER_SEC,
         health: int = settings.PLAYER_START_HEALTH,
+        bindings: Optional[dict[str, int]] = None,
     ) -> None:
         self.x = x
         self.y = y
@@ -32,6 +33,11 @@ class Player:
         # Timed power-up windows (seconds, real time, ticked by update_powerups).
         self.shield_timer = 0.0
         self.rapid_fire_timer = 0.0
+        # Live key bindings (a reference into the shared UserSettings dict, so
+        # rebinds from the Controls screen take effect immediately).
+        self.bindings: dict[str, int] = (
+            bindings if bindings is not None else dict(settings.DEFAULT_KEY_BINDINGS)
+        )
 
     def handle_input(self, keys: Sequence[bool], dt: float) -> None:
         """Move left/right based on currently-held keys. No-op while dead.
@@ -41,9 +47,9 @@ class Player:
         """
         if self.dead:
             return
-        if keys[pygame.K_LEFT]:
+        if keys[self.bindings["move_left"]]:
             self.x -= self.speed * dt
-        if keys[pygame.K_RIGHT]:
+        if keys[self.bindings["move_right"]]:
             self.x += self.speed * dt
 
     def clamp_to_screen(self, screen_width: int) -> None:

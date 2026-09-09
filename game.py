@@ -59,7 +59,8 @@ class Game:
             self.assets, settings.WIDTH, settings.HEIGHT, table=self.high_scores, audio=self.audio
         )
         self.controls_screen = ControlsScreen(
-            self.assets, settings.WIDTH, settings.HEIGHT, audio=self.audio
+            self.assets, settings.WIDTH, settings.HEIGHT,
+            audio=self.audio, store=self.user_settings,
         )
 
         self.screen_shake = ui.ScreenShake()
@@ -134,7 +135,11 @@ class Game:
         difficulty the run had already reached rather than at baseline.
         The "Phase N" intro text plays for the checkpoint level.
         """
-        self.player = Player(settings.WIDTH // 2, settings.HEIGHT - 80)
+        self.player = Player(
+            settings.WIDTH // 2,
+            settings.HEIGHT - 80,
+            bindings=self.user_settings.key_bindings,
+        )
         self.bullets = []
         self.enemy_bullets = []
         # Level 1: falling enemies.  Level 2: gunner enemies (set after
@@ -604,27 +609,37 @@ class Game:
                 self.fade.start("options")
 
     def _handle_keydown(self, key: int) -> None:
+        # Controls screen in edit mode owns the keyboard: a row awaiting
+        # input captures the next keypress (ESC cancels); ESC otherwise
+        # exits edit mode back to the normal controls screen. Nothing else
+        # (mute toggle, pause, navigation) runs while editing.
+        if self.state == "controls" and self.controls_screen.in_edit_mode():
+            self.controls_screen.handle_keydown(key)
+            return
+
+        bindings = self.user_settings.key_bindings
+
         # Global mute toggle, available in every state.
-        if key == pygame.K_m:
+        if key == bindings["mute"]:
             self.audio.toggle_mute()
 
         # While the player is dead, gameplay is frozen: ESC cannot pause and
-        # Space cannot fire until the game-over transition completes.
-        if key == pygame.K_ESCAPE and self.state in ("game", "level_finished") and not self.player.dead:
+        # the fire key cannot fire until the game-over transition completes.
+        if key == bindings["pause"] and self.state in ("game", "level_finished") and not self.player.dead:
             self._state_before_pause = self.state
             self.fade.start("pause")
-        elif key == pygame.K_ESCAPE and self.state == "pause":
+        elif key == bindings["pause"] and self.state == "pause":
             self.fade.start(getattr(self, "_state_before_pause", "game"))
 
-        if key == pygame.K_ESCAPE and self.state == "options":
+        if key == bindings["back"] and self.state == "options":
             self.fade.start("menu")
 
         # The high-scores and controls screens are reached via Options, so
-        # ESC (like their BACK buttons) returns one level up to Options -
-        # consistent with ESC from Options returning to the main menu.
-        if key == pygame.K_ESCAPE and self.state == "high_scores":
+        # their back key (like their BACK buttons) returns one level up to
+        # Options - consistent with back from Options returning to the menu.
+        if key == bindings["back"] and self.state == "high_scores":
             self.fade.start("options")
-        if key == pygame.K_ESCAPE and self.state == "controls":
+        if key == bindings["back"] and self.state == "controls":
             self.fade.start("options")
 
     # ------------------------------------------------------------------ #
@@ -674,7 +689,7 @@ class Game:
         # never fire during the death sequence (H1 gating preserved). While
         # RAPID FIRE is active the cooldown is shorter (see
         # Player.fire_cooldown_value) - a refreshed pickup never stacks.
-        if keys[pygame.K_SPACE] and self.player.can_fire and not self.player.dead:
+        if keys[self.user_settings.key_bindings["fire"]] and self.player.can_fire and not self.player.dead:
             self.bullets.append(self.player.spawn_bullet())
             self.audio.play("shoot")
             self.player.fire_cooldown = self.player.fire_cooldown_value()

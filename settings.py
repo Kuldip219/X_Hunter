@@ -2,8 +2,11 @@
 Central place for every constant used across the game.
 
 Nothing in here has side effects (no pygame calls), so this module is safe
-to import from anywhere without worrying about import order.
+to import from anywhere without worrying about import order. The only
+pygame usage is reading key constants for the default key bindings.
 """
+
+import pygame
 
 # --- Screen --- #
 WIDTH: int = 600
@@ -174,27 +177,59 @@ CONTROLS_IMG_SIZE: tuple[int, int] = (250, 80)
 # The keybind reference got its own full screen, so it can breathe: one
 # binding per row, CONTROLS_ROW_GAP apart (center-to-center), first row at
 # CONTROLS_ROWS_TOP. Each row draws its action label midleft at
-# CONTROLS_ACTION_X and its key midright at CONTROLS_KEY_X.
+# CONTROLS_ACTION_X and its key midright at CONTROLS_KEY_X. In edit mode
+# (activated by the edit.png button) every keyboard row is clickable and
+# can be rebound; the EDIT button sits at CONTROLS_EDIT_Y.
 CONTROLS_TITLE_Y: int = 120
-CONTROLS_ROWS_TOP: int = 280
-CONTROLS_ROW_GAP: int = 60
+CONTROLS_ROWS_TOP: int = 220
+CONTROLS_ROW_GAP: int = 55
 CONTROLS_ACTION_X: int = 120
 CONTROLS_KEY_X: int = 470
+CONTROLS_EDIT_Y: int = 635
 
-# --- Controls reference (read-only, sourced from the real bindings) --- #
-# Each row is (action, key). These match the actual input handling: player
-# movement reads K_LEFT/K_RIGHT (player.py handle_input), firing is K_SPACE
-# held (game.py _update_game), mute is K_m and pause/back are K_ESCAPE
-# (game.py _handle_keydown). Restart has no keyboard binding - it is the
-# RESTART button on the game-over screen.
+# --- Default key bindings --- #
+# Action id -> default pygame key. This is the source of truth for input:
+# player movement (player.py handle_input), firing (game.py _update_game),
+# and mute/pause/back (game.py _handle_keydown) all read these bindings
+# (via the persisted UserSettings copy). ESC is reserved (never bindable - it
+# cancels an in-progress rebind instead), but pause/back may keep ESC as a
+# default and be rebound away from it.
+DEFAULT_KEY_BINDINGS: dict[str, int] = {
+    "move_left": pygame.K_LEFT,
+    "move_right": pygame.K_RIGHT,
+    "fire": pygame.K_SPACE,
+    "pause": pygame.K_ESCAPE,
+    "mute": pygame.K_m,
+    "back": pygame.K_ESCAPE,
+}
+
+# --- Controls reference --- #
+# Ordered display list of (action id, label) rows, pulled from the real
+# bindings. "restart" has no keyboard binding (it is the RESTART button on
+# the game-over screen), so it is displayed but never rebindable.
 CONTROLS: list[tuple[str, str]] = [
-    ("Move", "LEFT / RIGHT"),
-    ("Fire (hold)", "SPACE"),
-    ("Pause / Resume", "ESC"),
-    ("Mute / Unmute", "M"),
-    ("Back (menus)", "ESC"),
-    ("Restart", "RESTART button"),
+    ("move_left", "Move Left"),
+    ("move_right", "Move Right"),
+    ("fire", "Fire (hold)"),
+    ("pause", "Pause / Resume"),
+    ("mute", "Mute / Unmute"),
+    ("back", "Back (menus)"),
+    ("restart", "Restart"),
 ]
+# Actions that can be rebound from the Controls screen (restart excluded).
+REBINDABLE_ACTIONS: tuple[str, ...] = (
+    "move_left",
+    "move_right",
+    "fire",
+    "pause",
+    "mute",
+    "back",
+)
+# ESC is reserved for cancelling captures, but can be rebound for actions
+# that legitimately default to it (back, pause) — rebind IS allowed in
+# those cases so the user can return to the default.
+ESC_DEFAULT_ACTIONS: tuple[str, ...] = ("back", "pause")
+RESERVED_KEYS: tuple[int, ...] = (pygame.K_ESCAPE,)
 SFX_FILES: dict[str, str] = {
     "shoot": "shoot.ogg",
     "hit": "hit.ogg",
@@ -321,6 +356,9 @@ HIGHSCORE_FILE: str = "highscores.json"
 # on the high-scores screen.
 SCORE_IMG_SIZE: tuple[int, int] = (250, 80)
 BACK_IMG_SIZE: tuple[int, int] = (250, 80)
+# The EDIT button on the Controls screen (edit.png).
+# Matches BACK_IMG_SIZE so both buttons render at the same size.
+EDIT_IMG_SIZE: tuple[int, int] = (250, 80)
 
 # --- Levels ---
 # The game is split into discrete levels. Each level has a score target
