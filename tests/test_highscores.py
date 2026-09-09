@@ -324,12 +324,24 @@ def test_entry_recorded_before_restart_resets(game):
 # ---------------------------------------------------------------------- #
 
 
-def test_menu_banner_images_load_and_match_footprint(game):
+def test_menu_banner_images_load_and_preserve_aspect_ratio(game):
     sw, sh = game.assets.score_img.get_size()
-    assert (sw, sh) == settings.SCORE_IMG_SIZE
+    assert sw <= settings.SCORE_IMG_SIZE[0] and sh <= settings.SCORE_IMG_SIZE[1]
+    assert abs(sw / sh - 1489 / 382) < 0.03
 
     bw, bh = game.assets.back_img.get_size()
-    assert (bw, bh) == settings.BACK_IMG_SIZE
+    assert bw <= settings.BACK_IMG_SIZE[0] and bh <= settings.BACK_IMG_SIZE[1]
+    assert abs(bw / bh - 1491 / 354) < 0.03
+
+
+def test_menu_banner_sizes_pinned(game):
+    """Pin the exact rendered pixel size of every menu banner button so
+    changes to footprints or source images cause a loud test failure
+    instead of silently drifting."""
+    assert game.assets.score_img.get_size() == (249, 64)
+    assert game.assets.back_img.get_size() == (250, 59)
+    assert game.assets.controls_img.get_size() == (250, 58)
+    assert game.assets.edit_img.get_size() == (250, 59)
 
 
 def test_menu_banner_falls_back_when_file_missing(monkeypatch, game):

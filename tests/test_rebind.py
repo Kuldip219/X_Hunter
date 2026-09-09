@@ -53,19 +53,17 @@ def _enter_edit_mode(game):
 
 
 def test_edit_button_same_size_as_back_button(game):
-    """The edit button and back button should render at the same size.
-    Both use the same footprint (EDIT_IMG_SIZE == BACK_IMG_SIZE) so they
-    must produce the same pixel dimensions."""
+    """The edit button and back button render at identical pixel sizes.
+    edit.png is scaled directly to back_img.get_size() so both buttons
+    match on the Controls screen."""
     ew, eh = game.assets.edit_img.get_size()
     bw, bh = game.assets.back_img.get_size()
-    # Both fit within the same footprint.
-    assert ew <= settings.EDIT_IMG_SIZE[0] and eh <= settings.EDIT_IMG_SIZE[1]
-    assert bw <= settings.BACK_IMG_SIZE[0] and bh <= settings.BACK_IMG_SIZE[1]
-    # Same footprint and same function -> same rendered size.
+    # edit is scaled to match back exactly.
     assert ew == bw
     assert eh == bh
-    # Actual size on the Controls screen: edit_rect and back_rect share
-    # the same width/height.
+    # The rendered size matches the documented footprint constant.
+    assert (ew, eh) == settings.EDIT_IMG_SIZE
+    # Actual rects on the Controls screen share the same dimensions.
     screen = _enter_edit_mode(game)
     assert screen.edit_rect.width == screen.back_rect.width
     assert screen.edit_rect.height == screen.back_rect.height

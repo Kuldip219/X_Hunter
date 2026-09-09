@@ -102,10 +102,12 @@ def test_controls_rows_single_column_generous_spacing(game):
 # ---------------------------------------------------------------------- #
 
 
-def test_controls_banner_loads_and_matches_footprint(game):
-    # controls.png must render at the exact footprint size.
+def test_controls_banner_loads_and_preserves_aspect_ratio(game):
+    # controls.png is 1168x273; it must fit the 250x80 footprint without
+    # distortion.
     w, h = game.assets.controls_img.get_size()
-    assert (w, h) == settings.CONTROLS_IMG_SIZE
+    assert w <= settings.CONTROLS_IMG_SIZE[0] and h <= settings.CONTROLS_IMG_SIZE[1]
+    assert abs(w / h - 1168 / 273) < 0.05  # pixel truncation allows ~3%
 
 
 def test_controls_banner_falls_back_when_file_missing(monkeypatch, game):

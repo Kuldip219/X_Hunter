@@ -357,8 +357,10 @@ HIGHSCORE_FILE: str = "highscores.json"
 SCORE_IMG_SIZE: tuple[int, int] = (250, 80)
 BACK_IMG_SIZE: tuple[int, int] = (250, 80)
 # The EDIT button on the Controls screen (edit.png).
-# Matches BACK_IMG_SIZE so both buttons render at the same size.
-EDIT_IMG_SIZE: tuple[int, int] = (250, 80)
+# Loaded with direct scaling to match back_img's rendered size exactly.
+# The footprint constant is documented here for reference; actual rendering
+# uses back_img.get_size() as the target in assets.py.
+EDIT_IMG_SIZE: tuple[int, int] = (250, 59)
 
 # --- Levels ---
 # The game is split into discrete levels. Each level has a score target
