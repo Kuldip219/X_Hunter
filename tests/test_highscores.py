@@ -344,6 +344,14 @@ def test_menu_banner_sizes_pinned(game):
     assert game.assets.edit_img.get_size() == (250, 59)
 
 
+def test_menu_banner_visible_content_pinned(game):
+    """Pin the *visible* (trimmed) content size of the shared-loading buttons
+    too, so edits to _load_menu_banner can't silently resize them."""
+    assert game.assets.score_img.get_bounding_rect(1).size == (240, 51)
+    assert game.assets.back_img.get_bounding_rect(1).size == (241, 48)
+    assert game.assets.controls_img.get_bounding_rect(1).size == (244, 50)
+
+
 def test_menu_banner_falls_back_when_file_missing(monkeypatch, game):
     from assets import _load_menu_banner
 

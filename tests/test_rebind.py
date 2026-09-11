@@ -53,20 +53,52 @@ def _enter_edit_mode(game):
 
 
 def test_edit_button_same_size_as_back_button(game):
-    """The edit button and back button render at identical pixel sizes.
-    edit.png is scaled directly to back_img.get_size() so both buttons
-    match on the Controls screen."""
+    """The edit button and back button render at identical canvas sizes.
+    edit.png is trimmed to its visible content and scaled to match
+    back_img's visible content width, on a canvas the same size as back_img."""
     ew, eh = game.assets.edit_img.get_size()
     bw, bh = game.assets.back_img.get_size()
-    # edit is scaled to match back exactly.
     assert ew == bw
     assert eh == bh
-    # The rendered size matches the documented footprint constant.
+    # The rendered canvas matches the documented footprint constant.
     assert (ew, eh) == settings.EDIT_IMG_SIZE
     # Actual rects on the Controls screen share the same dimensions.
     screen = _enter_edit_mode(game)
     assert screen.edit_rect.width == screen.back_rect.width
     assert screen.edit_rect.height == screen.back_rect.height
+
+
+def test_edit_button_visible_content_matches_back_button(game):
+    """Matching declared canvas sizes is NOT enough - edit.png carries more
+    transparent padding than back.png, so equal bounding boxes still produced a
+    visibly smaller button (regression: ~202x29 vs ~241x48 visible pixels).
+    Assert on the TRIMMED visible content, not the raw surface size."""
+    edit = game.assets.edit_img.get_bounding_rect(1)
+    back = game.assets.back_img.get_bounding_rect(1)
+
+    # The visible artwork widths now line up (within a rounding pixel).
+    assert abs(edit.width - back.width) <= 2
+    # And edit is no longer a thin sliver vertically (its artwork is a touch
+    # taller than back's by nature, but must be in the same ballpark).
+    assert edit.height >= back.height * 0.9
+    # Both fill a comparable fraction of their (identically sized) canvases.
+    canvas_frac = edit.width * edit.height / (back.width * back.height)
+    assert 0.7 <= canvas_frac <= 1.4
+
+
+def test_edit_button_matches_back_content_width_when_file_missing(monkeypatch, game):
+    """The edit banner helper still degrades to a font-rendered button the
+    same size as back_img when edit.png is unreadable."""
+    from assets import _load_menu_banner_matching_content
+
+    def boom(*args, **kwargs):
+        raise pygame.error("file not found")
+
+    monkeypatch.setattr(pygame.image, "load", boom)
+    surface = _load_menu_banner_matching_content(
+        "Assets/edit.png", game.assets.back_img, game.assets.font, "EDIT"
+    )
+    assert surface.get_size() == game.assets.back_img.get_size()
 
 
 # ---------------------------------------------------------------------- #

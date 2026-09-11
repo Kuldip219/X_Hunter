@@ -357,9 +357,10 @@ HIGHSCORE_FILE: str = "highscores.json"
 SCORE_IMG_SIZE: tuple[int, int] = (250, 80)
 BACK_IMG_SIZE: tuple[int, int] = (250, 80)
 # The EDIT button on the Controls screen (edit.png).
-# Loaded with direct scaling to match back_img's rendered size exactly.
-# The footprint constant is documented here for reference; actual rendering
-# uses back_img.get_size() as the target in assets.py.
+# edit.png has much more transparent padding than back.png, so it is trimmed
+# to its visible content and scaled to match back_img's visible content width
+# in assets.py; the rendered surface keeps back_img's canvas size (250x59) so
+# layout is unaffected. This constant is documented here for reference only.
 EDIT_IMG_SIZE: tuple[int, int] = (250, 59)
 
 # --- Levels ---

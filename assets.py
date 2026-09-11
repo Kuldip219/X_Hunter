@@ -198,11 +198,12 @@ class Assets:
         score_img = _load_menu_banner("Assets/score.png", settings.SCORE_IMG_SIZE, font, "HIGH SCORES")
         back_img = _load_menu_banner("Assets/back.png", settings.BACK_IMG_SIZE, font, "BACK")
         controls_img = _load_menu_banner("Assets/controls.png", settings.CONTROLS_IMG_SIZE, font, "CONTROLS")
-        # Edit button is scaled to match back_img's rendered size exactly,
-        # so both buttons look the same on the Controls screen.
-        edit_img = pygame.transform.scale(
-            pygame.image.load(resource_path("Assets/edit.png")),
-            back_img.get_size(),
+        # Edit button: edit.png ships with far more transparent padding around
+        # its artwork than back.png, so scaling the raw canvas to back_img's
+        # size still renders a visibly smaller button. Trim the padding and
+        # match the VISIBLE content width to back_img's instead.
+        edit_img = _load_menu_banner_matching_content(
+            "Assets/edit.png", back_img, font, "EDIT"
         )
 
         # --- Backgrounds ---
@@ -263,3 +264,62 @@ def _load_menu_banner(
     scale = min(footprint[0] / w, footprint[1] / h)
     new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
     return pygame.transform.scale(img, new_size)
+
+
+def _load_menu_banner_matching_content(
+    path: str,
+    reference: pygame.Surface,
+    font: pygame.font.Font,
+    label: str,
+    min_alpha: int = 250,
+) -> pygame.Surface:
+    """Load a menu banner whose source image carries a lot of transparent
+    padding (e.g. edit.png) and size it by its VISIBLE artwork rather than its
+    raw canvas.
+
+    Scaling two images with different padding to the same bounding-box size
+    does not make the buttons look the same: the one with more transparent
+    margin ends up visibly smaller. So we trim `path` to its near-opaque
+    content (the high `min_alpha` also discards the stray faint pixels
+    edit.png has near its bottom edge), scale the trimmed artwork to match
+    `reference`'s visible content width while preserving its aspect ratio, and
+    centre it on a canvas the same size as `reference`. Layout code that uses
+    `get_rect()` therefore keeps the same footprint as the reference button.
+
+    Falls back to a font-rendered button if the file is missing/unreadable, and
+    to the untrimmed image if it has no opaque content at all - consistent with
+    the game's non-fatal asset handling elsewhere.
+    """
+    try:
+        img = pygame.image.load(resource_path(path)).convert_alpha()
+    except (pygame.error, FileNotFoundError):
+        print(f"WARNING: could not load {path}; using font-rendered '{label}' button")
+        surface = pygame.Surface(reference.get_size(), pygame.SRCALPHA)
+        surface.fill((45, 45, 45, 255))
+        text = font.render(label, True, settings.WHITE)
+        surface.blit(
+            text,
+            text.get_rect(
+                center=(reference.get_width() // 2, reference.get_height() // 2)
+            ),
+        )
+        return surface
+
+    content_rect = img.get_bounding_rect(min_alpha)
+    content = img.subsurface(content_rect) if content_rect.width and content_rect.height else img
+
+    ref_content_rect = reference.get_bounding_rect(min_alpha)
+    target_w = max(1, ref_content_rect.width)
+    cw, ch = content.get_size()
+    scale = target_w / cw
+    new_size = (max(1, int(cw * scale)), max(1, int(ch * scale)))
+
+    canvas = pygame.Surface(reference.get_size(), pygame.SRCALPHA)
+    scaled = pygame.transform.smoothscale(content, new_size)
+    canvas.blit(
+        scaled,
+        scaled.get_rect(
+            center=(reference.get_width() // 2, reference.get_height() // 2)
+        ),
+    )
+    return canvas
