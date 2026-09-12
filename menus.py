@@ -140,8 +140,22 @@ class GameOverMenu:
             ("quit", self.quit_rect),
         ]
 
-    def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
-        go_text = self.assets.big_font.render("GAME OVER", True, settings.GAME_OVER_COLOR)
+    def draw(
+        self,
+        screen: pygame.Surface,
+        mouse_pos: tuple[int, int],
+        title: str = "GAME OVER",
+        color: Optional[tuple[int, int, int]] = None,
+    ) -> None:
+        """Draw the end-of-run screen.
+
+        `title`/`color` let the same screen frame a completed run as VICTORY
+        (see Game._draw_frame) - the buttons and layout are identical, so a
+        finished run and a death end up in exactly the same place.
+        """
+        if color is None:
+            color = settings.GAME_OVER_COLOR
+        go_text = self.assets.big_font.render(title, True, color)
         go_rect = go_text.get_rect(center=(settings.WIDTH // 2, 200))
         go_shadow = self.assets.big_font.render("GAME OVER", True, settings.BLACK)
 

@@ -65,6 +65,9 @@ class Assets:
     bullet_img: pygame.Surface
     enemy_bullet_img: pygame.Surface
     gunner_img: pygame.Surface
+    boss_img: pygame.Surface
+    boss_health_full_img: pygame.Surface
+    boss_health_empty_img: pygame.Surface
 
     health_images: list[pygame.Surface] = field(default_factory=list)
     explosion_frames: list[pygame.Surface] = field(default_factory=list)
@@ -131,6 +134,20 @@ class Assets:
         gunner_img = pygame.transform.scale(
             pygame.image.load(resource_path("Assets/shooter.png")),
             settings.ENEMY_IMG_SIZE,
+        )
+
+        # Boss (Level 3) + its full/empty health-bar pair.  These are scaled
+        # to fixed footprints and fall back to flat placeholders if the files
+        # are missing, so a missing boss asset can never stop the game from
+        # booting (same non-fatal policy as the menu banners).
+        boss_img = _load_scaled_image_or_placeholder(
+            "Assets/boss_ship.png", settings.BOSS_IMG_SIZE, (140, 60, 170, 255)
+        )
+        boss_health_full_img = _load_scaled_image_or_placeholder(
+            "Assets/boss_health_bar_full.png", settings.BOSS_HEALTH_BAR_SIZE, (60, 200, 90, 255)
+        )
+        boss_health_empty_img = _load_scaled_image_or_placeholder(
+            "Assets/boss_health_bar_empty.png", settings.BOSS_HEALTH_BAR_SIZE, (70, 70, 70, 255)
         )
 
         health_images = [
@@ -219,6 +236,9 @@ class Assets:
             bullet_img=bullet_img,
             enemy_bullet_img=enemy_bullet_img,
             gunner_img=gunner_img,
+            boss_img=boss_img,
+            boss_health_full_img=boss_health_full_img,
+            boss_health_empty_img=boss_health_empty_img,
             health_images=health_images,
             explosion_frames=explosion_frames,
             powerup_images=powerup_images,
@@ -238,6 +258,31 @@ class Assets:
             parallax=parallax,
             static_bg=static_bg,
         )
+
+
+def _load_scaled_image_or_placeholder(
+    path: str, size: tuple[int, int], color: tuple[int, int, int, int]
+) -> pygame.Surface:
+    """Load an image and scale it to `size`.
+
+    On a missing/unreadable file, return a flat placeholder surface instead
+    of raising - the same non-fatal asset policy the menu banners use, so a
+    missing boss sprite degrades to a visible block rather than a crash.
+    """
+    try:
+        img = pygame.image.load(resource_path(path)).convert_alpha()
+    except (pygame.error, FileNotFoundError):
+        print(f"WARNING: could not load {path}; using placeholder image")
+        surface = pygame.Surface(size, pygame.SRCALPHA)
+        surface.fill(color)
+        return surface
+    # smoothscale: the boss art ships far larger than its on-screen footprint
+    # (e.g. a 1920x316 health bar onto 400x66), and nearest-neighbour scaling
+    # blends the thin bar into its transparent surround, leaving it muddy.
+    try:
+        return pygame.transform.smoothscale(img, size)
+    except (pygame.error, ValueError):
+        return pygame.transform.scale(img, size)
 
 
 def _load_menu_banner(

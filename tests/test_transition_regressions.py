@@ -19,13 +19,23 @@ import pygame
 import pytest
 
 import settings
-from helpers import pump_run, pump_run_until, reach_level_2, run_ship_exit, start_game
+from helpers import (
+    kill_boss,
+    pump_run,
+    pump_run_until,
+    reach_level_2,
+    run_ship_exit,
+    start_game,
+)
 
 
 def _clear_current_level(game):
     """Hit the current level's score target and run the ship exit +
     "Level Finished" text through to completion. After this call the game
     is in the middle of transitioning to the next level's intro.
+
+    Only valid for the normal (ship-exit) levels - the boss level has no
+    "Level Finished" screen (see kill_boss).
     """
     game.score = game.level_score_target
     game._check_level_completion()
@@ -37,16 +47,26 @@ def _clear_current_level(game):
 
 
 def _finish_the_run(game):
-    """Clear every level in sequence and land on the game-over screen."""
+    """Clear every level in sequence and land on the end-of-run screen.
+
+    Levels 1-2 end through the normal ship-exit transition; the final level
+    is the boss fight, which ends by defeating the boss through the real
+    damage path and playing the victory sequence out. Both paths land on the
+    same "game_over" state (framed as VICTORY when run_finished is set).
+    """
     start_game(game)
-    for _ in range(settings.LEVEL_COUNT):
+    for _ in range(settings.LEVEL_COUNT - 1):
         _clear_current_level(game)
         assert pump_run_until(
-            game, lambda g: g.state == "game_over" or (
-                g.state in ("game", "level_finished") and not g.fade_text.active
-                and g.score < g.level_score_target
-            )
+            game, lambda g: g.state in ("game", "level_finished") and not g.fade_text.active
+            and g.score < g.level_score_target
         ), "level transition never settled"
+    assert game.current_level == settings.BOSS_LEVEL_INDEX
+    # Clear Level 3's opening wave to reach the boss gate, then fight it.
+    game.score = game.level_score_target
+    game._check_level_completion()
+    assert game.boss is not None, "the score gate should fly the boss in"
+    assert kill_boss(game), "boss fight never reached the end-of-run screen"
     assert game.state == "game_over", f"expected game_over, got {game.state!r}"
 
 

@@ -114,6 +114,93 @@ def reach_level_2(game) -> None:
     ), "never reached Level 2 gameplay"
 
 
+def clear_wave_level(game, cap: int = 1500) -> None:
+    """Clear a normal (ship-exit) level and settle into the NEXT level's
+    gameplay. Must not be used for the boss level - that ends through the
+    boss fight, not the ship-exit transition (see reach_boss).
+    """
+    next_level = game.current_level + 1
+    game.score = game.level_score_target
+    game._check_level_completion()
+    run_ship_exit(game)
+    assert pump_run_until(
+        game,
+        lambda g: g.state == "game" and g.current_level == next_level
+        and not g.fade_text.active,
+        cap=cap,
+    ), f"never reached Level {next_level} gameplay"
+
+
+def reach_boss(game) -> "Boss":
+    """Play a full run through to the start of the Level 3 boss fight.
+
+    Clears Level 1 and Level 2 through their normal transitions, then hits
+    Level 3's score gate to fly the boss in. Returns the live Boss instance
+    with the game sitting in "game" on Level 3.
+    """
+    start_game(game)
+    clear_wave_level(game)  # Level 1 -> 2
+    clear_wave_level(game)  # Level 2 -> 3
+    assert game.current_level == settings.BOSS_LEVEL_INDEX
+    assert game.boss is None, "the boss must not exist before its gate"
+
+    # Clear Level 3's opening wave to reach the boss gate.
+    game.score = game.level_score_target
+    game._check_level_completion()
+    assert game.boss_phase_active, "score gate should start the boss phase"
+    assert game.boss is not None
+    return game.boss
+
+
+def wait_for_boss_active(game, cap: int = 600) -> bool:
+    """Advance real frames until the boss finishes flying in.
+
+    Unlike pump_run_until this must drive the SIMULATION, not just the
+    transition machine: the entrance is part of _update_game.
+    """
+    for _ in range(cap):
+        if game.boss is not None and not game.boss.entering:
+            return True
+        game._update_and_draw((0, 0))
+        game._advance_transitions()
+    return game.boss is not None and not game.boss.entering
+
+
+def kill_boss(game, cap: int = 4000) -> bool:
+    """Defeat the boss through the REAL damage path (one bullet hit) and
+    play the whole victory sequence out to the end-of-run screen.
+
+    Returns whether "game_over" was reached within `cap` frames.
+    """
+    from bullet import Bullet
+
+    assert game.boss is not None and not game.boss_dying
+    # Let it settle first: it is invulnerable while entering.
+    assert wait_for_boss_active(game), "boss never finished entering"
+
+    # Make the kill deterministic: clear any leftover wave enemies (they are
+    # left to finish naturally in the real fight, but they would make this
+    # helper's outcome depend on random spawn positions) and top the player
+    # back up so the long victory sequence can't be interrupted by a death.
+    game.player.health = settings.PLAYER_START_HEALTH
+    game.player.invulnerable_timer = 0.0
+    game.enemies = []
+    game.gunners = []
+    game.enemy_bullets = []
+
+    game.boss.hp = 1
+    rect = game.boss.get_rect()
+    game.bullets.append(
+        Bullet(rect.centerx - settings.BULLET_IMG_SIZE[0] // 2, rect.centery)
+    )
+    for _ in range(cap):
+        if game.state == "game_over":
+            return True
+        game._update_and_draw((0, 0))
+        game._advance_transitions()
+    return game.state == "game_over"
+
+
 def place_enemy_over_player(game, dx: int = 10, dy: int = 5) -> "Enemy":
     """Replace the enemy list with a single enemy overlapping the player's
     sprite. The +5 dy accounts for enemy.update() moving it down 5px (300 px/s

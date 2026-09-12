@@ -64,8 +64,8 @@ class TestFadeText:
 
 
 class TestLevelConstants:
-    def test_two_levels_defined(self):
-        assert settings.LEVEL_COUNT == 2
+    def test_three_levels_defined(self):
+        assert settings.LEVEL_COUNT == 3
         assert len(settings.LEVEL_SCORE_TARGETS) == settings.LEVEL_COUNT
 
     def test_level_count_is_derived_from_targets(self):
@@ -80,11 +80,24 @@ class TestLevelConstants:
     def test_level_2_target_is_150(self):
         assert settings.LEVEL_SCORE_TARGETS[1] == 150
 
+    def test_level_3_target_is_200(self):
+        """Level 3's target is its BOSS GATE: reaching 200 ends the opening
+        wave and flies the boss in (not a level-clear transition)."""
+        assert settings.LEVEL_SCORE_TARGETS[settings.BOSS_LEVEL_INDEX] == 200
+
+    def test_boss_level_is_the_last_level(self):
+        assert settings.BOSS_LEVEL_INDEX == settings.LEVEL_COUNT - 1
+
     def test_level_2_demands_more_than_level_1(self):
         """Later levels must not be easier. Gunners also die slower than
         falling enemies (~2.0 vs ~2.5 kills/sec measured), so an equal target
         would make Level 2 the shorter half of the run."""
         assert settings.LEVEL_SCORE_TARGETS[1] > settings.LEVEL_SCORE_TARGETS[0]
+
+    def test_targets_are_non_decreasing(self):
+        """Each level asks for at least as much as the one before it."""
+        targets = settings.LEVEL_SCORE_TARGETS
+        assert targets == sorted(targets)
 
 
 # ── Level state after reset ───────────────────────────────────────────
@@ -158,7 +171,9 @@ class TestLevelTransition:
         assert game.fade_text.text == "Phase 2"
         assert game.fade_text.active is True
 
-    def test_level_2_completion_ends_run(self, game):
+    def test_level_2_completion_advances_to_level_3(self, game):
+        """Clearing Level 2 now opens Level 3's mixed wave (the boss level).
+        It no longer ends the run - the boss fight does that."""
         start_game(game)
         # Fast-forward to Level 2.
         game.score = settings.LEVEL_SCORE_TARGETS[0]
@@ -180,9 +195,13 @@ class TestLevelTransition:
         for _ in range(300):
             game.fade_text.update()
         game._on_fade_text_done()
-        # No more levels → game_over fade started.
-        assert game.fade.fading_out
-        assert game.fade.next_state == "game_over"
+        # Level 3: mixed wave, boss not yet gated in.
+        assert game.current_level == settings.BOSS_LEVEL_INDEX
+        assert game.level_score_target == settings.LEVEL_SCORE_TARGETS[2]
+        assert game.fade_text.text == "Phase 3"
+        assert game.boss is None
+        assert game.enemies and game.gunners
+        assert game.run_finished is False
 
     def test_no_transition_while_intro_pending(self, game):
         start_game(game)

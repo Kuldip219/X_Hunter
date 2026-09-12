@@ -192,11 +192,22 @@ class FadeText:
             if self.alpha <= 0:
                 self.active = False
 
-    def draw(self, screen: pygame.Surface, font: pygame.font.Font) -> None:
-        """Draw the text if visible (alpha > 0)."""
+    def draw(
+        self,
+        screen: pygame.Surface,
+        font: pygame.font.Font,
+        color: tuple[int, int, int] | None = None,
+    ) -> None:
+        """Draw the text if visible (alpha > 0).
+
+        `color` overrides the default fade-text colour (the boss victory
+        screen uses its own gold so it reads as a distinct, bigger moment).
+        """
         if not self.active or self.alpha <= 0:
             return
-        text_surf = font.render(self.text, True, settings.FADE_TEXT_COLOR)
+        text_surf = font.render(
+            self.text, True, color if color is not None else settings.FADE_TEXT_COLOR
+        )
         text_surf.set_alpha(self.alpha)
         rect = text_surf.get_rect(center=(screen.get_width() // 2, screen.get_height() // 2))
         screen.blit(text_surf, rect)

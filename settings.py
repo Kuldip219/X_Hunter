@@ -129,6 +129,8 @@ GUNNER_DESCEND_SPEED_PER_SEC: int = 120  # px/s while descending to stop-Y
 ENEMY_BULLET_SPEED_PER_SEC: int = 400  # px/s downward
 ENEMY_BULLET_IMG_SIZE: tuple[int, int] = (10, 16)
 ENEMY_BULLET_OFFSCREEN_Y: int = 820  # below screen bottom
+# Angled (boss spread) bullets also despawn once this far past a side edge.
+ENEMY_BULLET_OFFSCREEN_X_MARGIN: int = 60
 
 # --- Explosions ---
 EXPLOSION_IMG_SIZE: tuple[int, int] = (70, 70)
@@ -310,6 +312,11 @@ POWERUP_STATUS_X: int = 10
 POWERUP_STATUS_Y: int = 95
 POWERUP_STATUS_ROW_GAP: int = 30
 
+# Top-left corner of the player's health bar. Named (rather than left as the
+# draw call's default) so layout rules - e.g. "the boss bar must not overlap
+# the player's HUD" - can be asserted against one source of truth.
+PLAYER_HEALTH_POS: tuple[int, int] = (10, 10)
+
 # --- Effects ---
 SHAKE_STRENGTH: int = 8
 SHAKE_DURATION_ON_HIT: int = 40
@@ -375,11 +382,20 @@ EDIT_IMG_SIZE: tuple[int, int] = (250, 59)
 # the active gunner count scales at half the Level 1 rate (see _update_game).
 # 250 therefore makes Level 2 the longer half of the run (~125 s) on top of
 # gunners shooting back, instead of the shorter one it used to be at 100.
-LEVEL_SCORE_TARGETS: list[int] = [100, 150]  # Level 1 target, Level 2 target
+#
+# Level 3 ("The Final Phase") has a different shape: its target is not a
+# level-clear threshold but the BOSS GATE. Reaching 200 clears the opening
+# wave, stops all normal spawning, and flies the boss in (see BOSS_* below).
+LEVEL_SCORE_TARGETS: list[int] = [5, 5, 20]  # Level 1, Level 2, Level 3 (boss gate)
 # Derived, never hand-maintained: when LEVEL_COUNT was its own literal it
 # could exceed the number of targets, and reset_game() then indexed past the
 # end of the list (IndexError on RESTART after clearing the final level).
 LEVEL_COUNT: int = len(LEVEL_SCORE_TARGETS)
+
+# The boss level (0-indexed). It plays like a normal level for its opening
+# wave, then hands off to the boss fight instead of the ship-exit /
+# "Level Finished" transition the other levels use.
+BOSS_LEVEL_INDEX: int = 2
 
 # Ship exit animation: when a level's score target is reached, the player
 # ship flies upward and off the top of the screen before the "Level Finished"
@@ -415,6 +431,17 @@ BG_L1_FAR_SPEED: int = 40   # px/s — dim, faint nebula
 BG_L1_NEAR_SPEED: int = 120  # px/s — brighter stars, wisps
 BG_L2_FAR_SPEED: int = 45   # px/s — slightly faster, deeper space
 BG_L2_NEAR_SPEED: int = 130  # px/s — magenta wisps, debris
+# Level 3 reuses the Level 2 artwork (deep space reads as the same world as
+# the "final phase") but scrolls a touch faster: the run is at its most
+# intense here. Per-layer speeds live in BG_LAYER_SPEEDS so background.py
+# never has to special-case level indices.
+BG_L3_FAR_SPEED: int = 60
+BG_L3_NEAR_SPEED: int = 150
+BG_LAYER_SPEEDS: list[tuple[int, int]] = [
+    (BG_L1_FAR_SPEED, BG_L1_NEAR_SPEED),
+    (BG_L2_FAR_SPEED, BG_L2_NEAR_SPEED),
+    (BG_L3_FAR_SPEED, BG_L3_NEAR_SPEED),
+]
 
 # Static UI background: drawn behind all menu/UI screens (non-scrolling).
 # Same palette family as gameplay backgrounds but includes planet(s).
@@ -424,7 +451,108 @@ BG_UI_PATH: str = "Assets/backgrounds/ui_bg.png"
 BG_LAYERS: list[list[str]] = [
     ["Assets/backgrounds/l1_far.png", "Assets/backgrounds/l1_near.png"],  # Level 1
     ["Assets/backgrounds/l2_far.png", "Assets/backgrounds/l2_near.png"],  # Level 2
+    # Level 3 has no dedicated art yet: it reuses the Level 2 pair with its
+    # own (faster) speeds, so the boss fight still reads as deep space.
+    ["Assets/backgrounds/l2_far.png", "Assets/backgrounds/l2_near.png"],  # Level 3
 ]
+
+# --- Level 3: boss ("The Final Phase") ---
+# HP 40 against the player's 5 health: roughly a 40-hit fight, which at the
+# hold-to-fire cadence (~5 shots/s, ~16 with RAPID FIRE) is a ~10-25 s
+# sustained damage race split across three escalating phases.
+BOSS_HP: int = 40
+# Visibly bigger than a 50x50 enemy ship (4x in each dimension) while still
+# leaving room to dodge underneath: 200x222 preserves the source 700x778
+# aspect ratio (~0.9).
+BOSS_IMG_SIZE: tuple[int, int] = (200, 222)
+# The bar sits in the top-RIGHT corner, clear of the player's health bar
+# (which owns the top-left, 200x70 at PLAYER_HEALTH_POS). A full-width
+# top-middle bar collided with it: 400 px centred on a 600 px screen starts
+# at x=100, inside the player bar's 10..210 footprint, so the two bars drew
+# over each other and neither was readable. 340x56 keeps the source aspect
+# (~6.06) and clears the player bar by 40 px.
+BOSS_HEALTH_BAR_SIZE: tuple[int, int] = (340, 56)
+BOSS_HEALTH_BAR_Y: int = 16
+BOSS_HEALTH_BAR_MARGIN_X: int = 20  # gap to the right screen edge
+
+# Entrance: the boss drops in from above the screen down to BOSS_ACTIVE_Y
+# (inside the top band of the screen, above the player's reach) at a
+# readable speed. It is invulnerable while entering.
+BOSS_ENTRY_SPEED_PER_SEC: int = 160
+BOSS_ACTIVE_Y: int = 130
+
+# Movement: continuous drift across a bounded horizontal band (never
+# touching the screen edges) plus a gentle vertical bob - deliberately NOT
+# the gunner's stop-and-shoot pattern.
+BOSS_DRIFT_SPEED_PER_SEC: int = 90
+BOSS_DRIFT_MARGIN: int = 40  # keeps the sprite this far from either edge
+BOSS_BOB_AMPLITUDE: int = 16  # px up/down around BOSS_ACTIVE_Y
+BOSS_BOB_PERIOD_SECONDS: float = 2.6  # one full up/down cycle
+
+# Phases by HP fraction (40 HP):
+#   phase 1 (> 0.66, HP 27-40): spread shot only
+#   phase 2 (> 0.33, HP 14-26): spread + aimed burst
+#   phase 3 (<= 0.33, HP 0-13): spread + aimed burst + minion spawns
+# The thresholds are fractions of max HP so a future HP retune keeps the
+# documented thirds rather than silent off-by-a-few ranges.
+BOSS_PHASE_1_MIN_FRACTION: float = 0.66
+BOSS_PHASE_2_MIN_FRACTION: float = 0.33
+
+# Attack cooldowns per phase (index 0 = phase 1), tightening as the fight
+# goes on so later phases feel more urgent without becoming unfair.
+BOSS_SPREAD_COOLDOWN_SECONDS: tuple[float, float, float] = (1.8, 1.4, 1.0)
+BOSS_SPREAD_COUNT: int = 5  # bullets per fan
+BOSS_SPREAD_ANGLE_DEGREES: float = 70.0  # total fan width, centered on "straight down"
+# Aimed burst (phase 2+): track the player, telegraph for
+# BOSS_AIM_CHARGE_SECONDS (red tint on the sprite), then fire
+# BOSS_AIM_BURST_COUNT bullets at the tracked position.
+#
+# The shots leave the boss's own muzzle aimed at where the player was when
+# the charge ended - they are not spawned at the tracked column. Spawning
+# them on the player's x made them materialise in mid-air (often a whole
+# ship-width away from the boss), which reads as bullets appearing out of
+# nowhere. Firing from the muzzle keeps a visible source, and the clamp
+# keeps the volley a downward shot even if the player is beside the boss.
+BOSS_AIM_COOLDOWN_SECONDS: tuple[float, float, float] = (0.0, 3.2, 2.4)
+BOSS_AIM_CHARGE_SECONDS: float = 0.8
+BOSS_AIM_BURST_COUNT: int = 3
+BOSS_AIM_BURST_INTERVAL_SECONDS: float = 0.12
+BOSS_AIM_MAX_ANGLE_DEGREES: float = 60.0
+# Target row used when a caller doesn't supply the player's y (unit tests
+# driving the boss on its own). HEIGHT - 40 is the player's spawn row.
+BOSS_AIM_DEFAULT_TARGET_Y: int = HEIGHT - 40
+# Minion spawns (phase 3 only): one gunner-type enemy every interval. They
+# are fight texture - they award no score and do not feed any gate.
+# 3 s keeps phase 3 visibly busier than the old 5 s while leaving a gunner
+# (which needs ~1-2 s to descend clear of the spawn point) room to move on.
+BOSS_MINION_INTERVAL_SECONDS: float = 3.0
+# Each minion drops from an alternating point this fraction of the boss's
+# width either side of its centre, so two spawns can never land on top of
+# each other even if the boss happens to be turning around between them.
+BOSS_MINION_SPAWN_SPREAD: float = 0.25
+
+# Victory sequence (boss HP reaches 0): a white screen flash, a staggered
+# explosion chain across the sprite, then a final larger full-sprite blast
+# BOSS_DEATH_HOLD_SECONDS after the last one before the victory screen.
+BOSS_DEATH_EXPLOSION_COUNT: int = 6
+BOSS_DEATH_EXPLOSION_INTERVAL_SECONDS: float = 0.15
+BOSS_DEATH_HOLD_SECONDS: float = 0.7
+BOSS_DEATH_FINAL_EXPLOSION_SCALE: float = 2.0
+# Hit flash: an additive white pop on the sprite.
+BOSS_HIT_FLASH_SECONDS: float = 0.08
+BOSS_HIT_FLASH_ALPHA: int = 140
+# Aim telegraph: a MULTIPLICATIVE red wash (the sprite's greens/blues are
+# scaled down) rather than an additive one - adding white to the boss's
+# already pale hull just brightens it, which is indistinguishable from the
+# hit flash. Scaling the channels instead turns the boss visibly crimson.
+BOSS_AIM_TINT_COLOR: tuple[int, int, int] = (255, 80, 80)
+BOSS_VICTORY_FLASH_COLOR: tuple[int, int, int] = (255, 255, 255)
+BOSS_VICTORY_FLASH_ALPHA: int = 150
+# Copy + colour for the dedicated victory screen. Deliberately distinct from
+# the "Level Finished" fade text: gold, and about the whole run, not a level.
+# ASCII only (the pixel font has no em-dash glyph).
+BOSS_VICTORY_TEXT: str = "THE FINAL PHASE CLEARED"
+BOSS_VICTORY_COLOR: tuple[int, int, int] = (255, 215, 0)
 
 # --- Button hover offset (buttons nudge down 5px on hover) ---
 BUTTON_HOVER_OFFSET: int = 5

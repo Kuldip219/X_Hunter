@@ -9,13 +9,31 @@ the project creator's original artwork. No attribution is required.
 
 The Level 2 gunner enemy sprite (`shooter.png`) is the project creator's
 original artwork. No attribution is required. It is scaled to 50×50 to match
-the existing enemy hitbox, and flipped vertically to face downward.
+the existing enemy hitbox and rendered with no transform — the artwork already
+faces the player, so an earlier vertical flip was reverted as backwards.
 
 ## Controls-screen edit button (user-provided)
 
 The EDIT button (`edit.png`) used to enter key-rebinding edit mode on the
 Controls screen is the project creator's original artwork. No attribution
 is required.
+
+## Level 3 boss (user-provided)
+
+The boss fight art is the project creator's original artwork. No attribution
+is required.
+
+| Local file | Used for | On-screen size |
+|---|---|---|
+| `boss_ship.png` | Level 3 boss sprite ("The Final Phase") | 200×222 (from 700×778) |
+| `boss_health_bar_full.png` | Boss health bar fill (wiped to the current HP) | 340×56 (from 1920×316) |
+| `boss_health_bar_empty.png` | Boss health bar track (the hollow frame) | 340×56 (from 1920×318) |
+
+The two bar images are the same design canvas: the empty one is the hollow
+frame (its interior is transparent), the full one is that frame with the health
+fill. They are drawn in the same place - the empty one as the track, then the
+full one clipped to the current HP fraction - so the bar visibly drains rather
+than fading in place.
 
 ## Parallax backgrounds (procedurally generated)
 

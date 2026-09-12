@@ -1,6 +1,6 @@
 # X Hunter — Project Audit & Work Log
 
-Status: **278 tests passing** · last updated August 30, 2026.
+Status: **306 tests passing** · last updated September 11, 2026.
 
 ## 1. Project snapshot
 
@@ -11,8 +11,12 @@ Status: **278 tests passing** · last updated August 30, 2026.
   `menus.py`/`ui.py` handle UI and screen effects; `assets.py` loads sprites/fonts;
   `settings.py` holds every constant; `audio.py` wraps the mixer; `difficulty.py`
   computes the invisible difficulty ramp; `highscores.py` manages the time-based
-  leaderboard; `settings_store.py` persists user volume settings;
-  `background.py` provides two-layer parallax scrolling and a static UI backdrop.
+  leaderboard; `settings_store.py` persists user volume settings **and key
+  bindings**; `background.py` provides two-layer parallax scrolling and a static
+  UI backdrop.
+- **Input:** every binding comes from `settings.DEFAULT_KEY_BINDINGS` and is
+  loaded/persisted through `UserSettings` (`settings_store.py`); the Controls
+  screen's EDIT mode rebinds them in-game with conflict-safe swaps.
 - **State machine:** `menu → level_intro → game ⇄ pause → game_over`, with dedicated
   states for `options`, `high_scores`, `controls`, and `level_finished` off the menu.
   Level transitions route through `level_intro` (black screen + fade text) before
@@ -24,7 +28,7 @@ Status: **278 tests passing** · last updated August 30, 2026.
   Level 2 (gunner enemies + enemy bullets, score target 150). Run timer tracks total
   time across both levels (pauses during menus/pause). Checkpoint restart on death:
   Level 1 death → full reset; Level 2 death → restart at Level 2, timer preserved.
-- **Code size:** ~2,600+ source lines across root modules; 110+ tracked files
+- **Code size:** ~3,800 source lines across root modules; **113 tracked files**
   (all source/assets/tests — build artifacts are untracked and ignored).
 - **Entry point:** `python main.py` (headless-safe: `SDL_VIDEODRIVER=dummy`).
 
@@ -81,7 +85,9 @@ only non-lethal hits are blocked during i-frames. Found by the test suite (one
 failing test surfaced the bug; fixed only after approval).
 
 ### 3.7 Audit docs (`9016f9a`)
-`AUDIT.md` (original findings) and `PROGRESS.md` (this document).
+`AUDIT.md` (original findings) and `PROGRESS.md` (this document). `AUDIT.md` was
+later folded into this file and deleted (`8413966`); §2 preserves its original
+findings.
 
 ### 3.8 Audio (`7c1de0f`) — 33 tests
 - **Assets** (`Assets/audio/`, all CC0): 6 Kenney.nl SFX (shoot, hit, explosion,
@@ -110,7 +116,7 @@ frozen while dead (H1).
 
 ### 3.11 Delta-time movement — **54 tests** (details in §4)
 
-### 3.12 Fixed-timestep accumulator (uncommitted) — **62 tests** (details in §4.7)
+### 3.12 Fixed-timestep accumulator (`79c6fc9`) — **62 tests** (details in §4.7)
 
 ## 4. Delta-time conversion (latest work)
 
@@ -211,11 +217,11 @@ capped); one rendered frame runs 2 steps from 2.5×FIXED_DT banked; a sub-step
 frame runs 0 steps (render-only); no banking in menu; `_update_and_draw` still
 simulates exactly one step; and a real `run()` loop smoke test.
 
-### 3.13 High-score leaderboard (uncommitted) — **83 tests** (details in §7)
+### 3.13 High-score leaderboard (`d7162b3`) — **83 tests** (details in §7)
 
 Persistent top-10 leaderboard with a dedicated `high_scores` state (see §7).
 
-### 3.14 High-scores navigation: entry moved to Options (uncommitted) — **86 tests**
+### 3.14 High-scores navigation: entry moved to Options (committed) — **86 tests**
 
 Per project-head direction, the standalone HIGH SCORES buttons were removed
 from the main menu and the game-over screen; the leaderboard is now reached
@@ -227,7 +233,7 @@ ratio, and fall back to font-rendered buttons if missing (non-fatal). BACK
 and ESC on the high-scores screen return to Options (one level up), matching
 ESC-from-Options → main menu. Leaderboard logic/storage untouched.
 
-### 3.15 Menu button spacing restored (uncommitted)
+### 3.15 Menu button spacing restored (committed)
 
 Removing the HIGH SCORES button (§3.14) left stale y-positions: the game-over
 QUIT button sat at 490 (a leftover from when a third button lived at 410),
@@ -237,7 +243,7 @@ over restart 330→350 / quit 490→450, main play 290→300 / options 380→400
 exit 560→500 (pause was already 350/450). Pure layout change, no logic or
 navigation touched.
 
-### 3.16 Options screen: volume sliders + controls reference (uncommitted) — **110 tests**
+### 3.16 Options screen: volume sliders + controls reference (`20a071e`) — **110 tests**
 
 Replaced the options placeholder with a real screen: two live volume sliders
 (music / SFX, 0-100%), a read-only controls reference (sourced from the actual
@@ -254,7 +260,7 @@ mute (M) stays independent of the slider values (unmuting restores exactly
 where they were). `game.py` gained MOUSEMOTION/MOUSEBUTTONUP handling for
 slider drags in the options state.
 
-### 3.17 Options BACK button (uncommitted) — **112 tests**
+### 3.17 Options BACK button (`e3e8e83`) — **112 tests**
 
 Added the shared `back.png` banner (same `_load_menu_banner` helper the
 high-scores screen already uses) to the Options screen at center y=765, below
@@ -264,7 +270,7 @@ such hint either). Clicking BACK triggers exactly the same fade to the main
 menu as ESC — additive, ESC unchanged, and BACK is hover-SFX tracked like the
 other buttons.
 
-### 3.18 Options screen spacing system (uncommitted) — **112 tests**
+### 3.18 Options screen spacing system (`f7f033f`) — **112 tests**
 
 Audited the incremental layout: control rows sat ~1px apart, the CONTROLS
 heading touched row 1, the last row OVERLAPPED the HIGH SCORES banner by
@@ -279,7 +285,7 @@ Back/Restart) with per-cell action/key anchor columns
 (`OPTIONS_GRID_X`). Pure repositioning — no element, font, asset, or logic
 changed; all 112 tests pass unmodified (none hardcode coordinates).
 
-### 3.19 Dedicated controls screen + three-button Options (uncommitted) — **123 tests**
+### 3.19 Dedicated controls screen + three-button Options (`fb4fd92`) — **123 tests**
 
 Moved the keybind reference off Options onto a new `controls` state
 (following the high_scores pattern: FadeTransition, reachable only via
@@ -294,7 +300,7 @@ CONTROLS (controls.png, new 1168×273 asset loaded via the same
 controls list vacated. Slider logic, persistence, and high_scores logic
 untouched.
 
-### 3.20 Power-up system (committed `c1252f1`) + health-regen pickup (uncommitted) — **140 tests**
+### 3.20 Power-up system (`c1252f1`) + health-regen pickup (`ab5dba3`) — **140 tests**
 
 **Power-ups (committed in `c1252f1`):** shield, rapid fire, and (initially)
 extra life. They only drop from destroyed enemies (12% per kill,
@@ -572,9 +578,113 @@ Updated `test_level_1_target_is_200`/`test_level_2_target_is_250` in
 `test_levels.py` to match the current values (`[100, 150]`). These tests were
 stale after the target values were changed but the tests were not updated.
 
+### 3.43 Dedicated gunner sprite + level-score retune (`f6d9ecd`) — **282 tests**
+**Gunner sprite:** `Assets/shooter.png` (325×345, project creator's original art)
+is now loaded in `assets.py` and scaled to `ENEMY_IMG_SIZE` (50×50), so
+`gunner_img` is a distinct surface from `enemy_img`. Level 2 gunners render with
+their own ship; Level 1 falling enemies keep `Assets/Enemyship.png`. The 50×50
+collision hitbox is unchanged (sprite was scaled to the hitbox, never the
+reverse).
+
+**Orientation:** the sprite was first flipped vertically on a guess (the source's
+opaque-pixel density is higher in its top half), but that was backwards in-game —
+the artwork is drawn facing the player already. The flip was removed; `gunner_img`
+is now the raw scaled source with **no transform**, matching how `enemy_img` is
+handled. Attributed as user-provided original art in `Assets/SOURCES.md`.
+
+**Level targets:** `LEVEL_SCORE_TARGETS` retuned `[200, 250]` → `[100, 150]`, with
+the stale target tests updated to match. `LEVEL_COUNT` is derived from the list
+length (never hand-maintained).
+
+**Tests:** 4 in `TestGunnerSprite` (`test_gunner.py`) — gunner image is a distinct
+object from the enemy image, matches the 50×50 hitbox, is **not** flipped, and
+Level 1 enemies still use the original sprite.
+
+### 3.44 Editable key bindings on the Controls screen (`99f6317`) — **302 tests**
+Added an EDIT button (`Assets/edit.png`, user-provided original art) to the
+Controls screen plus a full rebinding flow; movement, firing, mute, pause, and
+menu-back all read the live bindings so a rebind takes effect immediately in-game.
+
+**Bindings source of truth:** `settings.DEFAULT_KEY_BINDINGS` — `move_left` (LEFT),
+`move_right` (RIGHT), `fire` (SPACE), `pause` (ESC), `mute` (M), `back` (ESC).
+The RESTART row is displayed but is a button-only action, never rebindable.
+`player.py` now reads `move_left`/`move_right`; `game.py` reads `fire`/`mute`/
+`pause`/`back` from `user_settings.key_bindings`.
+
+**Flow:** the EDIT button toggles edit mode (all keyboard rows become clickable);
+clicking a row enters a per-row "awaiting input" state showing *Press any key…*;
+the next keypress becomes that row's binding, and **edit mode stays on** so more
+rows can be rebound in one session; EDIT again (or BACK/ESC) exits back to the
+normal list with updated labels.
+
+**Conflict handling (documented decision):** rebinding to an already-used key
+**swaps** the two actions (the displaced action takes the old key), so no action is
+ever left unbound. Note `pause` and `back` both default to ESC, so key uniqueness
+is not guaranteed by design — only "never unbound" is.
+
+**Escape key (documented decision):** ESC is in `RESERVED_KEYS` and is normally
+never capturable (pressing it cancels the pending capture). To avoid trapping
+players who had rebound `back`/`pause` away from ESC, ESC **is** capturable for
+the actions in `ESC_DEFAULT_ACTIONS = ("back", "pause")`. While edit mode is
+active the Controls screen owns the keyboard (mute/pause/navigation suppressed);
+once edit mode exits, normal ESC handling resumes unchanged.
+
+**Persistence:** reuses the existing `settings_store.py` pattern — `UserSettings`
+now carries `key_bindings` (action → keycode) in `settings.json`, loaded
+defensively per-action (missing/invalid entries fall back per-action to defaults)
+and saved atomically on every rebind.
+
+**Tests:** 20 new in `tests/test_rebind.py` (plus one pre-existing banner test
+retargeted in each of `test_highscores.py`/`test_controls.py`) — edit-mode
+entry/toggle, back/ESC exit edit mode without navigating, row-select → capture,
+ESC cancels capture, ESC never bindable for non-ESC-default actions, ESC
+bindable for `back`/`pause`, restart not rebindable, multi-rebind in one session,
+swap-on-conflict, same-key no-op, persistence across reload, immediate save, and
+live-wiring tests proving the rebound fire/move/mute/back keys work in-game and
+the old keys no longer do. `test_controls.py` and `test_options.py` updated for
+the new bindings source of truth.
+
+### 3.45 Menu banner sizing: aspect-ratio restore + edit-button content match (`9fccc1b`, `418d15d`) — **306 tests**
+Two follow-up fixes after the EDIT button was reported as visibly smaller than the
+BACK button on the same screen.
+
+**`9fccc1b` — revert the over-correction:** an earlier attempt made
+`_load_menu_banner()` scale images to the **exact footprint** (stretching), which
+resized *every* banner button, not just EDIT. Reverted to the original
+aspect-ratio-preserving fit (`scale = min(fw/w, fh/h)`), so score/back/controls
+returned to their pre-fix appearance, and added `test_menu_banner_sizes_pinned`
+pinning every banner's exact rendered pixel size so this can't silently drift
+again.
+
+**`418d15d` — match *visible content*, not canvas size:** equal declared sizes were
+still not enough. `edit.png` (2048×768) carries far more transparent padding than
+`back.png` (1491×354), and its canvas was being stretched non-uniformly to
+250×59, so its visible artwork rendered at only **~202×29** vs BACK's **~241×48**
+— about 16% narrower *and* 40% shorter. Fix: new
+`_load_menu_banner_matching_content()` in `assets.py` (used **only** for
+edit.png): `convert_alpha()`, trim to the near-opaque content bbox
+(`min_alpha=250`, which also discards edit.png's stray faint pixels — one at
+`(996,767)` with alpha 128–249), `smoothscale` the trimmed art preserving aspect
+ratio so its width matches `back_img`'s visible content width, and centre it on a
+canvas the same size as `back_img` so `edit_rect`/layout is unaffected. Result:
+EDIT visible content **239×55** vs BACK 241×48 (width within 2px). The shared
+`_load_menu_banner()` was not touched, so every other button keeps its original
+loading and size (`score` 249×64, `back` 250×59, `controls` 250×58).
+
+**Tests:** 3 new + 1 updated — `test_edit_button_visible_content_matches_back_button`
+(asserts *trimmed* content width within 2px and height ≥ 90% of BACK's; would have
+failed before), `test_edit_button_matches_back_content_width_when_file_missing`
+(font fallback keeps back_img's size), `test_menu_banner_visible_content_pinned`
+(pins the shared-loader buttons' visible content), and
+`test_edit_button_same_size_as_back_button` (canvas equality, docstring corrected).
+
 ## 5. Current repo state
 
 ```
+418d15d Fix menu button sizing regression
+9fccc1b Preserve banner aspect ratio and pin menu sizes
+99f6317 Add editable key rebinding
+f6d9ecd Use dedicated gunner sprite; update level targets
 465c12c Shift HUD elements up (health bar & power-up)
 01a0e9b Hide in-game score HUD during gameplay
 db150d2 Fix parallax scroll + menu bg
@@ -615,14 +725,19 @@ ef34719 Add player i-frames, blinking and death freeze
 044af23 Initial commit
 ```
 
-- **Tracked files:** 110+ (all source/assets/tests — build artifacts untracked).
-- **Tests:** 278 passing, 1 warning (the intentional mixer-failure test) in ~54 s.
+- **Tracked files:** 113 (all source/assets/tests — build artifacts untracked).
+- **Tests:** 306 passing, 1 warning (the intentional mixer-failure test) in ~70 s.
 - **Source modules:** `game.py`, `player.py`, `enemy.py`, `gunner.py`, `bullet.py`,
   `enemy_bullet.py`, `explosion.py`, `powerup.py`, `menus.py`, `ui.py`, `assets.py`,
   `settings.py`, `audio.py`, `difficulty.py`, `highscores.py`, `settings_store.py`,
   `resource_path.py`, `background.py`, `main.py`.
-- **Test files:** 18 test modules in `tests/` + `conftest.py` + `helpers.py`.
-- **Clean tree:** no uncommitted changes (except the test fix in §3.42, pending commit).
+- **Test files:** 19 test modules in `tests/` + `conftest.py` + `helpers.py`
+  (21 files; 301 `def test_` functions → **306 collected tests** with
+  parametrisation).
+- **Dependencies:** `requirements.txt` pins `pygame==2.6.1` and `numpy==2.1.1`
+  (numpy is used by the power-up alpha-channel content crop); `requirements-dev.txt`
+  adds `pytest==9.1.1`.
+- **Clean tree:** no uncommitted changes (HEAD = `418d15d`).
 - **History rewrite note:** The early commits (before `091fdf4`) were rewritten
   via `git rebase --root` (or equivalent). The original hashes (`f54a4a3` through
   `6c92ca9`) still exist in the git object store but are orphaned (not ancestors
@@ -639,25 +754,34 @@ ef34719 Add player i-frames, blinking and death freeze
 - **FPS counter** in the HUD to verify dt/accumulator behavior by eye.
 - **Interpolation between sim steps** for perfectly smooth rendering at high
   refresh rates (currently render shows the latest fixed step's state).
-- **Options screen** — volumes done; remaining ideas: difficulty tuning, key
-  rebinding, per-channel volume vs. master mute.
+- **Options screen** — volumes and key rebinding are done; remaining ideas:
+  difficulty tuning and per-channel volume vs. master mute.
 - **Audio for the menu** (calmer loop, nice-to-have).
 - **Hold-to-fire cadence tuning** (`PLAYER_FIRE_COOLDOWN_SECONDS` is a single constant).
-- ~~Artifact history purge~~ — build/dist and `X Hunter.spec` were removed
-  from history via a full rebase (see §5 history rewrite note). No longer
-  needed.
 - **Pause menu OPTIONS button** — currently players must quit to access volume
   sliders; adding an OPTIONS entry to the pause menu would let them adjust
   settings mid-game.
-- **More levels** — Level 2 currently reuses existing gunner behavior; additional
+- **More levels** — Level 2 currently consists of gunner enemies only; additional
   enemy types, boss fights, or procedural level generation could extend the
-  two-level structure.
+  two-level structure (`LEVEL_SCORE_TARGETS` already handles arbitrary counts).
 - **Parallax background assets** — currently procedurally generated; replacing
   with hand-drawn or Kenney CC0 pack art would improve visual quality.
-- **Level-score targets** — currently `[100, 150]`; may need further tuning
-  based on playtesting.
+- **Level-score targets** — retuned to `[100, 150]` in §3.43; may need further
+  tuning based on playtesting.
+- **Stray committed asset** — `Assets/ChatGPT Image Sep 9, 2026, 06_16_10 PM.png`
+  (671 KB) was committed alongside the rebinding work in `99f6317` and is not
+  referenced by any code. As of this update it is deleted in the working tree
+  (unstaged); decide whether to stage that deletion so it also leaves the history
+  of the current tree.
+- **Doc hygiene** — §3.16–§3.21 and §3.22–§3.30 describe overlapping work
+  (the Options/controls screens and the power-up rework were written up twice
+  during incremental sessions). The later-numbered sections are the
+  authoritative versions; a consolidation pass would remove the duplication.
+- ~~Artifact history purge~~ — build/dist and `X Hunter.spec` were removed
+  from history via a full rebase (see §5 history rewrite note). No longer
+  needed.
 
-Resolved since last update:
+Resolved since last update (§3.43–§3.45):
 - ~~Difficulty clock paused during pause~~ — fixed in §3.26.
 - ~~Power-up sprites + sizing + durations~~ — committed in §3.30.
 - ~~requirements.txt for numpy~~ — added in §3.30.
@@ -665,6 +789,14 @@ Resolved since last update:
 - ~~Parallax scrolling backgrounds + static UI backdrop~~ — implemented in §3.39.
 - ~~Hide in-game score HUD~~ — implemented in §3.40.
 - ~~HUD repositioning after score hide~~ — implemented in §3.41.
+- ~~Level-score-target test staleness~~ — fixed in §3.42.
+- ~~Gunner enemies sharing the Level 1 enemy sprite~~ — dedicated `shooter.png`,
+  §3.43.
+- ~~Editable key bindings~~ — implemented and persisted, §3.44.
+- ~~ESC un-capturable (couldn't rebind back/pause to ESC)~~ — resolved in §3.44;
+  ESC is capturable for `back`/`pause`.
+- ~~Edit button rendering smaller than back button~~ — visible-content sizing
+  fix, §3.45.
 
 ## 7. High-score leaderboard (time-based, reworked in §3.33)
 
@@ -711,7 +843,7 @@ Resolved since last update:
   (green "Finished" / red "Dead") and marks the just-finished run's row with
   a yellow `NEW` badge.
 
-### 7.4 Tests (`tests/test_highscores.py`, 27 tests)
+### 7.4 Tests (`tests/test_highscores.py`, 29 tests)
 
 Table logic (sorted insertion, Finished-above-Dead grouping, ascending Finished
 sort, descending Dead sort, non-qualifying rejection, tie-at-10 rejection, trim

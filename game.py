@@ -11,6 +11,7 @@ import ui
 from assets import Assets
 from ui import FadeText
 from audio import AudioManager
+from boss import Boss
 from bullet import Bullet
 from difficulty import Difficulty
 from enemy import Enemy
@@ -65,6 +66,16 @@ class Game:
 
         self.screen_shake = ui.ScreenShake()
         self.damage_flash = ui.DamageFlash()
+        # White full-screen flash for the boss's final hit (reuses the same
+        # DamageFlash component the red hit-flash uses, just with its own
+        # colour/alpha so the two never share a timer).
+        self.victory_flash = ui.DamageFlash(
+            settings.BOSS_VICTORY_FLASH_COLOR, settings.BOSS_VICTORY_FLASH_ALPHA
+        )
+        # Cache of pre-tinted boss sprites (hit flash / aim telegraph), keyed
+        # by (image, colour, alpha, additive) so a charge doesn't allocate a
+        # copy every frame.
+        self._tint_cache: dict[tuple[int, tuple[int, int, int], int, bool], pygame.Surface] = {}
         self.fade = ui.FadeTransition((settings.WIDTH, settings.HEIGHT))
         self.fade_text = FadeText("")
         self.shake_offset: tuple[int, int] = (0, 0)
@@ -112,6 +123,22 @@ class Game:
         # Flag set at the start of a level to show "Phase N" intro text.
         # Cleared when the text finishes.
         self._level_intro_pending: bool = False
+
+        # --- Level 3 boss state --- #
+        # The boss object exists only once the score gate is reached; it is
+        # None during every other level and during Level 3's opening wave.
+        self.boss: Boss | None = None
+        # True from the moment the score gate is reached: normal enemy
+        # replenishment stops for the rest of the level.
+        self.boss_phase_active: bool = False
+        # True while the staggered death-explosion chain is playing.
+        self.boss_dying: bool = False
+        self.boss_death_timer: float = 0.0
+        self.boss_death_chain: list[tuple[float, float, float, float]] = []
+        self.boss_death_duration: float = 0.0
+        # Flag set so the victory fade text's completion hands off to the
+        # end-of-run (game_over) state instead of a level transition.
+        self._victory_pending: bool = False
 
         # player, bullets, enemies, explosions, and score are all
         # initialized by reset_game() below.
@@ -165,6 +192,18 @@ class Game:
         # this one, or RESTART would keep refusing to use the checkpoint.
         self.run_finished = False
 
+        # Boss state: a restart (full or checkpoint) always rebuilds the
+        # boss level from its opening wave - the boss is never inherited
+        # mid-fight, and no death sequence carries over.
+        self.boss = None
+        self.boss_phase_active = False
+        self.boss_dying = False
+        self.boss_death_timer = 0.0
+        self.boss_death_chain = []
+        self.boss_death_duration = 0.0
+        self._victory_pending = False
+        self.victory_flash.timer = 0
+
         # Level state: full reset goes to Level 0; checkpoint preserves
         # the level that was active when the player died.
         if from_checkpoint:
@@ -187,18 +226,7 @@ class Game:
         self.level_score_target = settings.LEVEL_SCORE_TARGETS[self.current_level]
 
         # Spawn the initial enemy wave for the current level.
-        if self.current_level == 0:
-            # Level 1: falling enemies.
-            self.enemies = [
-                Enemy.spawn_initial(settings.WIDTH) for _ in range(settings.INITIAL_ENEMY_COUNT)
-            ]
-            self.gunners = []
-        else:
-            # Level 2+: gunner enemies.
-            self.gunners = [
-                GunnerEnemy.spawn_initial(settings.WIDTH) for _ in range(settings.INITIAL_ENEMY_COUNT)
-            ]
-            self.enemies = []
+        self._spawn_level_wave()
 
         # Freeze gameplay during the intro fade text. The state will
         # transition to "level_intro" via fade.start() in the caller
@@ -213,6 +241,37 @@ class Game:
         # Load the correct parallax background pair for this level.
         self.parallax.set_level(self.current_level)
         self.parallax.reset()
+
+    def _spawn_level_wave(self) -> None:
+        """Populate the opening enemy wave for `current_level`.
+
+        Level 1 (index 0): falling enemies only.
+        Level 2 (index 1): gunner enemies only.
+        Level 3 (index 2, the boss level): a MIXED wave - everything the
+        player has faced so far - before the boss gate is reached. Once the
+        gate is hit the boss replaces all of it (see _start_boss_phase).
+        """
+        if self.current_level == 0:
+            self.enemies = [
+                Enemy.spawn_initial(settings.WIDTH) for _ in range(settings.INITIAL_ENEMY_COUNT)
+            ]
+            self.gunners = []
+        elif self.current_level == 1:
+            self.enemies = []
+            self.gunners = [
+                GunnerEnemy.spawn_initial(settings.WIDTH)
+                for _ in range(settings.INITIAL_ENEMY_COUNT)
+            ]
+        else:
+            # Boss level opening wave: both types, each at its own level's
+            # baseline count/scaling (see _replenish_enemies).
+            self.enemies = [
+                Enemy.spawn_initial(settings.WIDTH) for _ in range(settings.INITIAL_ENEMY_COUNT)
+            ]
+            self.gunners = [
+                GunnerEnemy.spawn_initial(settings.WIDTH)
+                for _ in range(settings.INITIAL_ENEMY_COUNT)
+            ]
 
     # ------------------------------------------------------------------ #
     # Main loop
@@ -237,7 +296,14 @@ class Game:
             self._advance_transitions()
             self.fade.draw(self.screen)
             if self._fade_text_owns_screen():
-                self.fade_text.draw(self.screen, self.assets.big_font)
+                # The victory screen uses its own gold styling so it reads as
+                # a distinctly bigger moment than a normal "Level Finished".
+                color = (
+                    settings.BOSS_VICTORY_COLOR
+                    if self.state == "victory"
+                    else None
+                )
+                self.fade_text.draw(self.screen, self.assets.big_font, color)
 
             pygame.display.update()
 
@@ -324,7 +390,7 @@ class Game:
         elif self.state == "game":
             self._draw_game()
 
-        elif self.state in ("level_intro", "level_finished"):
+        elif self.state in ("level_intro", "level_finished", "victory"):
             # Black screen with only the fade text — no gameplay HUD,
             # entities, or background. The text itself is drawn later in
             # run() (after the fade transition), same as for other states.
@@ -340,7 +406,14 @@ class Game:
 
         elif self.state == "game_over":
             self.static_bg.draw(self.screen)
-            self.game_over_menu.draw(self.screen, mouse_pos)
+            # A run that beat the final boss gets VICTORY rather than
+            # GAME OVER - same screen, same buttons, different framing.
+            title, color = (
+                ("VICTORY", settings.BOSS_VICTORY_COLOR)
+                if self.run_finished
+                else ("GAME OVER", settings.GAME_OVER_COLOR)
+            )
+            self.game_over_menu.draw(self.screen, mouse_pos, title=title, color=color)
 
         elif self.state == "high_scores":
             self.static_bg.draw(self.screen)
@@ -380,7 +453,7 @@ class Game:
         """
         return (
             self.fade_text.active
-            and self.state in ("game", "level_intro", "level_finished")
+            and self.state in ("game", "level_intro", "level_finished", "victory")
             and not self.fade.fading_out
         )
 
@@ -410,18 +483,36 @@ class Game:
             self.audio.play_music()
         elif new_state == "pause":
             self.audio.pause_music()
-        elif new_state in ("menu", "game_over", "high_scores", "controls", "level_intro", "level_finished"):
+        elif new_state in (
+            "menu",
+            "game_over",
+            "high_scores",
+            "controls",
+            "level_intro",
+            "level_finished",
+            "victory",
+        ):
             self.audio.stop_music()
 
     def _on_fade_text_done(self) -> None:
         """Called when a fade text overlay finishes. Handles level intro
-        completion (resume gameplay) and level finished transition (advance
-        to next level or end run).
+        completion (resume gameplay), the boss victory screen (end the run),
+        and the level finished transition (advance to next level or end run).
         """
         if self._level_intro_pending:
             # Intro text finished — transition from level_intro to gameplay.
             self._level_intro_pending = False
             self.fade.start("game")
+        elif self._victory_pending:
+            # Boss victory screen finished — the run is over and COMPLETE.
+            # Same end-state as a fully-cleared run (game_over, framed as
+            # VICTORY by the run_finished flag) so RESTART/QUIT work exactly
+            # as they already do after the last level.
+            self._victory_pending = False
+            self.fade.start("game_over")
+            self.last_run_rank = self.high_scores.add(
+                self.run_timer, result="Finished"
+            )
         elif self._level_transition_pending:
             # Level finished text finished — advance to next level.
             self._level_transition_pending = False
@@ -446,22 +537,17 @@ class Game:
                 self.score = 0
                 self.level_score_target = settings.LEVEL_SCORE_TARGETS[self.current_level]
 
-                if self.current_level == 0:
-                    # Level 1: falling enemies.
-                    self.enemies = [
-                        Enemy.spawn_initial(settings.WIDTH)
-                        for _ in range(settings.INITIAL_ENEMY_COUNT)
-                    ]
-                    self.gunners = []
-                else:
-                    # Level 2+: gunner enemies.
-                    self.gunners = [
-                        GunnerEnemy.spawn_initial(settings.WIDTH)
-                        for _ in range(settings.INITIAL_ENEMY_COUNT)
-                    ]
-                    self.enemies = []
+                # Fresh wave for the new level (Level 3 opens with a mixed
+                # wave and its boss gate, not the ship-exit path).
+                self._spawn_level_wave()
                 self.enemy_bullets = []
                 self.powerups = []
+                # No boss is inherited between levels: Level 3 always starts
+                # from its opening wave with the boss gated behind score.
+                self.boss = None
+                self.boss_phase_active = False
+                self.boss_dying = False
+                self.boss_death_chain = []
 
                 # Reposition the player to the default starting position.
                 # After ship exit, player.y is off-screen (< -80). Without
@@ -483,8 +569,15 @@ class Game:
 
     def _check_level_completion(self) -> None:
         """Check if the current level's score target has been reached.
-        If so, start the ship-exit animation (Phase 1): enemy replenishment
-        stops, player input is blocked, and the ship flies upward off-screen.
+
+        Normal levels: start the ship-exit animation (Phase 1) - enemy
+        replenishment stops, player input is blocked, and the ship flies
+        upward off-screen.
+
+        The boss level: the same score target is the BOSS GATE. Reaching it
+        stops normal spawning and flies the boss in instead; there is no
+        ship exit and no "Level Finished" screen (the boss's own victory
+        sequence ends the run).
         """
         if self._level_transition_pending or self._level_intro_pending or self._ship_exit_active:
             return
@@ -493,7 +586,14 @@ class Game:
             # same simulation step that killed them. The death sequence owns
             # the run from here, so don't queue a level transition behind it.
             return
+        if self.boss_phase_active or self.boss is not None or self.boss_dying:
+            # The boss gate is one-shot: once the fight is under way, score
+            # changes (there are none for boss hits) must not re-trigger it.
+            return
         if self.score >= self.level_score_target:
+            if self.current_level == settings.BOSS_LEVEL_INDEX:
+                self._start_boss_phase()
+                return
             self._ship_exit_active = True
             # Clear the field: no more enemies, bullets, or power-ups while
             # the ship exits. The player is invulnerable during this phase.
@@ -507,6 +607,91 @@ class Game:
             # could lock _blink_visible() into an invisible phase for the
             # entire exit, making the ship disappear instantly.
             self.player.invulnerable_timer = 0.0
+
+    # ------------------------------------------------------------------ #
+    # Level 3: boss
+    # ------------------------------------------------------------------ #
+
+    def _start_boss_phase(self) -> None:
+        """Score gate reached on the boss level.
+
+        Normal spawning stops for the rest of the level. Falling enemies
+        have a natural exit (they scroll off the bottom), so they are left to
+        finish their descent; gunners stop mid-screen and would otherwise
+        fire forever, so they are cleared outright, along with the shots they
+        already fired. The boss then flies in.
+        """
+        self.boss_phase_active = True
+        self.gunners.clear()
+        self.enemy_bullets.clear()
+        self.boss = Boss(settings.WIDTH, settings.HEIGHT)
+        self.audio.play("explosion")
+
+    def _begin_boss_death(self) -> None:
+        """Boss HP hit 0: flash, then a staggered explosion chain.
+
+        The chain is scheduled up-front as (time, x, y, scale) entries so it
+        is driven purely by accumulated dt in the fixed-step simulation - no
+        frame counting, and reproducible in a test.
+        """
+        self.boss_dying = True
+        self.boss_death_timer = 0.0
+        # The run is WON the instant the boss hits 0 HP - not when the victory
+        # screen finishes. Setting it here means a player killed in the same
+        # step (or during the chain) can't turn a win into a death: the
+        # dead-player path below is gated on this flag, and RESTART already
+        # treats a finished run as "start fresh from Level 1".
+        self.run_finished = True
+        self.victory_flash.trigger()
+        self.enemy_bullets.clear()
+
+        interval = settings.BOSS_DEATH_EXPLOSION_INTERVAL_SECONDS
+        frame_w, frame_h = settings.EXPLOSION_IMG_SIZE
+        chain: list[tuple[float, float, float, float]] = []
+        if self.boss is not None:
+            for i in range(settings.BOSS_DEATH_EXPLOSION_COUNT):
+                # Scatter blasts across the sprite's footprint.
+                x = self.boss.x + random.uniform(0, self.boss.width) - frame_w / 2
+                y = self.boss.y + random.uniform(0, self.boss.height) - frame_h / 2
+                chain.append((i * interval, x, y, 1.0))
+            # Final, bigger blast centered on the sprite, after the chain.
+            scale = settings.BOSS_DEATH_FINAL_EXPLOSION_SCALE
+            chain.append(
+                (
+                    settings.BOSS_DEATH_EXPLOSION_COUNT * interval,
+                    self.boss.x + self.boss.width / 2 - frame_w * scale / 2,
+                    self.boss.y + self.boss.height / 2 - frame_h * scale / 2,
+                    scale,
+                )
+            )
+        chain.sort(key=lambda entry: entry[0])
+        self.boss_death_chain = chain
+        last_time = chain[-1][0] if chain else 0.0
+        self.boss_death_duration = last_time + settings.BOSS_DEATH_HOLD_SECONDS
+
+    def _update_boss_death(self, dt: float) -> None:
+        """Tick the death chain; hand off to the victory screen when done."""
+        self.boss_death_timer += dt
+        while self.boss_death_chain and self.boss_death_chain[0][0] <= self.boss_death_timer:
+            _t, x, y, scale = self.boss_death_chain.pop(0)
+            self.explosions.append(
+                Explosion(x, y, settings.ENEMY_EXPLOSION_FRAME_DELAY, scale=scale)
+            )
+            self.audio.play("explosion")
+
+        if self.boss_death_chain or self.boss_death_timer < self.boss_death_duration:
+            return
+
+        # Chain finished: the boss is gone and the run is complete. The
+        # victory text is a dedicated screen (state "victory"), then the
+        # normal end-of-run game_over state takes over.
+        self.boss_dying = False
+        self.boss = None
+        # run_finished was already set when the boss hit 0 HP - the run is won
+        # from that instant, not from the end of the animation.
+        self._victory_pending = True
+        self.fade_text.reset(settings.BOSS_VICTORY_TEXT)
+        self.fade.start("victory")
 
     def _draw_mute_indicator(self) -> None:
         """Small 'MUTED' label in the top-right corner while audio is off."""
@@ -647,6 +832,14 @@ class Game:
     # ------------------------------------------------------------------ #
 
     def _update_game(self, keys: pygame.key.ScancodeWrapper, dt: float = 1.0 / settings.FPS) -> None:
+        # The boss's death sequence owns the run from the moment the boss hits
+        # 0 HP: it has to finish, because the run is already WON and run_finished
+        # is set. Handled before the dead-player freeze so a player killed in
+        # the same step can never strand the victory half-played.
+        if self.boss_dying:
+            self._update_boss_death(dt)
+            return
+
         # Once the player is dead, gameplay is fully frozen - no input, no
         # collisions, no bullet/enemy movement - until the state machine has
         # actually transitioned away from "game" (the fade-out to "game_over"
@@ -710,42 +903,11 @@ class Game:
         # fade text overlays, where the run timer keeps counting).
         self.run_timer = (pygame.time.get_ticks() - self.run_start_ticks - self.run_timer_paused_ms) / 1000.0
 
-        # --- Level 1: falling enemies ---
-        if self.current_level == 0:
-            enemy_speed = min(
-                settings.ENEMY_SPEED_PER_SEC + settings.ENEMY_SPEED_GAIN_PER_SEC * diff,
-                settings.ENEMY_MAX_SPEED_PER_SEC,
-            )
-            for enemy in self.enemies:
-                enemy.speed = enemy_speed
-
-            target_count = min(
-                settings.INITIAL_ENEMY_COUNT + int(settings.ENEMY_COUNT_GAIN * diff),
-                settings.ENEMY_MAX_COUNT,
-            )
-            while len(self.enemies) < target_count:
-                self.enemies.append(Enemy.spawn_initial(settings.WIDTH))
-
-        # --- Level 2: gunner enemies ---
-        if self.current_level == 1:
-            gunner_speed = min(
-                settings.GUNNER_DESCEND_SPEED_PER_SEC + int(settings.ENEMY_SPEED_GAIN_PER_SEC * diff * 0.5),
-                settings.ENEMY_MAX_SPEED_PER_SEC,
-            )
-            gunner_drift = min(
-                settings.GUNNER_DRIFT_SPEED_PER_SEC + int(settings.ENEMY_SPEED_GAIN_PER_SEC * diff * 0.3),
-                300,
-            )
-            for gunner in self.gunners:
-                gunner.descend_speed = gunner_speed
-                gunner.drift_speed = gunner_drift
-
-            target_gunner_count = min(
-                settings.INITIAL_ENEMY_COUNT + int(settings.ENEMY_COUNT_GAIN * diff * 0.5),
-                settings.ENEMY_MAX_COUNT,
-            )
-            while len(self.gunners) < target_gunner_count:
-                self.gunners.append(GunnerEnemy.spawn_initial(settings.WIDTH))
+        # --- Enemy wave: difficulty scaling + replenishment ---
+        # Skipped entirely once the boss gate is hit: that is what stops new
+        # falling/gunner enemies from spawning for the rest of the level.
+        if not self.boss_phase_active:
+            self._scale_and_replenish_wave(diff)
 
         # --- Player bullets ---
         for bullet in self.bullets[:]:
@@ -753,8 +915,10 @@ class Game:
             if bullet.off_screen:
                 self.bullets.remove(bullet)
 
-        # --- Falling enemies (Level 1): movement + collision ---
-        for enemy in self.enemies:
+        # --- Falling enemies: movement + collision ---
+        # Iterating a copy so the boss-phase "remove instead of respawn" path
+        # below cannot skip the next enemy in the list.
+        for enemy in self.enemies[:]:
             enemy.update(dt)
 
             if enemy.get_rect().colliderect(self.player.get_rect()):
@@ -766,10 +930,19 @@ class Game:
                         self.audio.play("hit")
                     self.screen_shake.trigger()
                     self.damage_flash.trigger()
-                    enemy.respawn(settings.WIDTH)
+                    if self.boss_phase_active:
+                        self.enemies.remove(enemy)
+                    else:
+                        enemy.respawn(settings.WIDTH)
 
             if enemy.is_off_screen(settings.HEIGHT):
-                enemy.respawn(settings.WIDTH)
+                # During the boss fight the field empties out instead of
+                # recycling: leftover enemies finish their descent and are
+                # simply gone (no new spawns once the gate is hit).
+                if self.boss_phase_active:
+                    self.enemies.remove(enemy)
+                else:
+                    enemy.respawn(settings.WIDTH)
 
         # --- Gunner enemies (Level 2): movement + firing ---
         for gunner in self.gunners:
@@ -814,6 +987,27 @@ class Game:
                     self.screen_shake.trigger()
                     self.damage_flash.trigger()
 
+        # --- Boss (Level 3) ---
+        # Updated after the enemy-bullet pass so the bullets it fires this
+        # step are moved (and can hit the player) starting next step, not
+        # twice in one step.
+        if self.boss is not None:
+            if self.boss_dying:
+                self._update_boss_death(dt)
+            else:
+                boss_bullets, minion_count = self.boss.update(
+                    dt,
+                    self._player_center_x(),
+                    settings.WIDTH,
+                    self._player_center_y(),
+                )
+                self.enemy_bullets.extend(boss_bullets)
+                for _ in range(minion_count):
+                    # Phase-3 minions are gunners that descend from the boss
+                    # itself and then behave exactly like normal gunners.
+                    mx, my = self.boss.minion_spawn_pos()
+                    self.gunners.append(GunnerEnemy(mx, my, settings.WIDTH))
+
         # --- Power-ups ---
         for powerup in self.powerups[:]:
             powerup.update(dt)
@@ -824,9 +1018,9 @@ class Game:
                 self.audio.play("powerup")
                 self.powerups.remove(powerup)
 
-        # --- Player bullets vs enemies (Level 1) ---
+        # --- Player bullets vs falling enemies ---
         for bullet in self.bullets[:]:
-            for enemy in self.enemies:
+            for enemy in self.enemies[:]:
                 if enemy.get_rect().colliderect(bullet.get_rect()):
                     self.audio.play("explosion")
                     self.explosions.append(
@@ -835,14 +1029,19 @@ class Game:
                     if bullet in self.bullets:
                         self.bullets.remove(bullet)
                     self._maybe_drop_powerup(enemy.x, enemy.y)
-                    enemy.respawn(settings.WIDTH)
+                    if self.boss_phase_active:
+                        # No recycling during the boss fight: the kill clears
+                        # the field rather than putting a new enemy back in.
+                        self.enemies.remove(enemy)
+                    else:
+                        enemy.respawn(settings.WIDTH)
                     self.score += 1
                     self._check_level_completion()
                     break
 
-        # --- Player bullets vs gunners (Level 2) ---
+        # --- Player bullets vs gunners ---
         for bullet in self.bullets[:]:
-            for gunner in self.gunners:
+            for gunner in self.gunners[:]:
                 if gunner.get_rect().colliderect(bullet.get_rect()):
                     self.audio.play("explosion")
                     self.explosions.append(
@@ -851,12 +1050,94 @@ class Game:
                     if bullet in self.bullets:
                         self.bullets.remove(bullet)
                     self._maybe_drop_powerup(gunner.x, gunner.y)
-                    gunner.respawn(settings.WIDTH)
+                    if self.boss_phase_active:
+                        self.gunners.remove(gunner)
+                    else:
+                        gunner.respawn(settings.WIDTH)
                     self.score += 1
                     self._check_level_completion()
                     break
 
+        # --- Player bullets vs the boss ---
+        # Full-sprite rect, no weak points, and no invulnerability window: a
+        # connecting bullet ALWAYS deals one damage (the fight is a pure
+        # damage race). Boss hits award no score, so they can never feed
+        # _check_level_completion and re-trigger the level gate.
+        if self.boss is not None and not self.boss_dying and not self.boss.entering:
+            for bullet in self.bullets[:]:
+                if self.boss.get_rect().colliderect(bullet.get_rect()):
+                    if bullet in self.bullets:
+                        self.bullets.remove(bullet)
+                    self.audio.play("explosion")
+                    self.explosions.append(
+                        Explosion(
+                            bullet.x - settings.EXPLOSION_IMG_SIZE[0] // 2,
+                            bullet.y - settings.EXPLOSION_IMG_SIZE[1] // 2,
+                            settings.ENEMY_EXPLOSION_FRAME_DELAY,
+                        )
+                    )
+                    self.boss.take_damage(1)
+                    if self.boss.hp <= 0:
+                        self._begin_boss_death()
+                        break
+
         self.shake_offset = self.screen_shake.update()
+
+    def _player_center_x(self) -> float:
+        """The player's horizontal center, used by the boss's aimed burst."""
+        return self.player.x + self.player.width / 2.0
+
+    def _player_center_y(self) -> float:
+        """The player's vertical center: the row the boss's aimed burst
+        converges on, so the volley is fired at the ship rather than at a
+        fixed screen row."""
+        return self.player.y + self.player.height / 2.0
+
+    def _scale_and_replenish_wave(self, diff: float) -> None:
+        """Difficulty-scaled speeds + top-up for the current level's wave.
+
+        Level 1 uses falling enemies, Level 2 uses gunners, and the boss
+        level's opening wave mixes both (each type scaled at the rate its
+        own level established). Never called once the boss gate is hit -
+        that is exactly what stops replenishment for the rest of the level.
+        """
+        use_falling = self.current_level in (0, settings.BOSS_LEVEL_INDEX)
+        use_gunners = self.current_level in (1, settings.BOSS_LEVEL_INDEX)
+
+        if use_falling:
+            enemy_speed = min(
+                settings.ENEMY_SPEED_PER_SEC + settings.ENEMY_SPEED_GAIN_PER_SEC * diff,
+                settings.ENEMY_MAX_SPEED_PER_SEC,
+            )
+            for enemy in self.enemies:
+                enemy.speed = enemy_speed
+
+            target_count = min(
+                settings.INITIAL_ENEMY_COUNT + int(settings.ENEMY_COUNT_GAIN * diff),
+                settings.ENEMY_MAX_COUNT,
+            )
+            while len(self.enemies) < target_count:
+                self.enemies.append(Enemy.spawn_initial(settings.WIDTH))
+
+        if use_gunners:
+            gunner_speed = min(
+                settings.GUNNER_DESCEND_SPEED_PER_SEC + int(settings.ENEMY_SPEED_GAIN_PER_SEC * diff * 0.5),
+                settings.ENEMY_MAX_SPEED_PER_SEC,
+            )
+            gunner_drift = min(
+                settings.GUNNER_DRIFT_SPEED_PER_SEC + int(settings.ENEMY_SPEED_GAIN_PER_SEC * diff * 0.3),
+                300,
+            )
+            for gunner in self.gunners:
+                gunner.descend_speed = gunner_speed
+                gunner.drift_speed = gunner_drift
+
+            target_gunner_count = min(
+                settings.INITIAL_ENEMY_COUNT + int(settings.ENEMY_COUNT_GAIN * diff * 0.5),
+                settings.ENEMY_MAX_COUNT,
+            )
+            while len(self.gunners) < target_gunner_count:
+                self.gunners.append(GunnerEnemy.spawn_initial(settings.WIDTH))
 
     def _maybe_drop_powerup(self, x: float, y: float) -> None:
         """Roll for a power-up drop at the given position (shared by both
@@ -900,6 +1181,9 @@ class Game:
         for gunner in self.gunners:
             gunner.draw(self.screen, self.assets.gunner_img, self.shake_offset)
 
+        if self.boss is not None:
+            self._draw_boss()
+
         # Enemy bullets (red, below player bullets in draw order).
         for ebullet in self.enemy_bullets:
             self.screen.blit(
@@ -913,7 +1197,12 @@ class Game:
                 (bullet.x + self.shake_offset[0], bullet.y + self.shake_offset[1]),
             )
 
-        ui.draw_health_bar(self.screen, self.assets.health_images, self.player.health)
+        ui.draw_health_bar(
+            self.screen,
+            self.assets.health_images,
+            self.player.health,
+            settings.PLAYER_HEALTH_POS,
+        )
 
         for powerup in self.powerups:
             self.screen.blit(
@@ -926,7 +1215,14 @@ class Game:
 
         self._draw_powerup_status()
 
+        # Boss health bar: appears only once the boss is actually active in
+        # its fight position (not while it is still flying in, and not once
+        # the death chain has begun).
+        if self._boss_bar_visible():
+            self._draw_boss_health_bar()
+
         self.damage_flash.draw(self.screen)
+        self.victory_flash.draw(self.screen)
 
         for explosion in self.explosions[:]:
             if not explosion.is_finished(len(self.assets.explosion_frames)):
@@ -935,7 +1231,10 @@ class Game:
             else:
                 self.explosions.remove(explosion)
 
-        if self.player.dead and self.player.explosion:
+        # A player explosion only owns the screen on a run that hasn't already
+        # been won: after the boss dies, run_finished is set and the victory
+        # sequence must not be hijacked by the death fade.
+        if self.player.dead and self.player.explosion and not self.run_finished:
             if not self.player.explosion.is_finished(len(self.assets.explosion_frames)):
                 # NOTE: drawn without the shake offset, matching the original.
                 self.player.explosion.draw(self.screen, self.assets.explosion_frames)
@@ -955,6 +1254,119 @@ class Game:
                     self.run_timer, result="Dead"
                 )
 
+
+    def _draw_boss(self) -> None:
+        """Draw the boss sprite, tinted for its current telegraph state."""
+        img = self.assets.boss_img
+        pos = (
+            int(self.boss.x + self.shake_offset[0]),
+            int(self.boss.y + self.shake_offset[1]),
+        )
+        self.screen.blit(img, pos)
+        if self.boss.hit_flash > 0:
+            # Just took a hit: quick white pop (additive - brightens).
+            self._blit_tint(
+                img, pos, (255, 255, 255), settings.BOSS_HIT_FLASH_ALPHA, additive=True
+            )
+        elif self.boss.aim_target_visible():
+            # Charging the aimed burst: the boss turns red (multiplicative -
+            # colour-shifts). Distinguishable from the hit flash at a glance.
+            self._blit_tint(
+                img, pos, settings.BOSS_AIM_TINT_COLOR, 255, additive=False
+            )
+
+    def _blit_tint(
+        self,
+        image: pygame.Surface,
+        pos: tuple[int, int],
+        color: tuple[int, int, int],
+        alpha: int,
+        additive: bool = True,
+    ) -> None:
+        """Blit a translucent colour wash that respects the sprite's shape.
+
+        additive=True adds the colour (brightens - the hit pop).
+        additive=False multiplies it in (colour-shifts - the red telegraph),
+        which keeps the sprite's own alpha silhouette either way.
+
+        The tint surface is cached: it is rebuilt only when the boss image,
+        colour or mode changes, not on every frame of a charge.
+        """
+        key = (id(image), color, alpha, additive)
+        tint = self._tint_cache.get(key)
+        if tint is None:
+            tint = image.copy()
+            if additive:
+                tint.fill(color, special_flags=pygame.BLEND_RGB_ADD)
+                tint.set_alpha(alpha)
+            else:
+                wash = pygame.Surface(image.get_size(), pygame.SRCALPHA)
+                wash.fill((*color, alpha))
+                tint.blit(wash, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            self._tint_cache[key] = tint
+        self.screen.blit(tint, pos)
+
+    @staticmethod
+    def _boss_bar_fill_width(hp: int, max_hp: int, total_width: int) -> int:
+        """Width in px of the boss bar's fill at the current HP.
+
+        0 at 0 HP, the full bar width at max HP, rounded - the same function
+        of live HP that the draw call uses, so it can be asserted directly.
+        """
+        if max_hp <= 0:
+            fraction = 0.0
+        else:
+            fraction = max(0.0, min(1.0, hp / max_hp))
+        return int(round(total_width * fraction))
+
+    def _boss_bar_rect(self) -> pygame.Rect:
+        """Where the boss bar is drawn: top-right, clear of the player's HUD.
+
+        Top-left belongs to the player's health bar and the power-up status
+        list, so the boss bar is right-aligned instead of centred - a centred
+        bar is wide enough on a 600 px screen to draw straight over them.
+        """
+        return self.assets.boss_health_full_img.get_rect(
+            topright=(
+                settings.WIDTH - settings.BOSS_HEALTH_BAR_MARGIN_X,
+                settings.BOSS_HEALTH_BAR_Y,
+            )
+        )
+
+    def _boss_bar_visible(self) -> bool:
+        """True only while the boss is in its active fight position.
+
+        The bar must not appear during the entrance (it belongs to the fight,
+        not the arrival) nor once the death chain has started.
+        """
+        return self.boss is not None and not self.boss.entering and not self.boss_dying
+
+    def _draw_boss_health_bar(self) -> None:
+        """Boss health bar: the empty artwork as the track, with the full
+        artwork wiped over it to the current HP fraction.
+
+        The bar is redrawn from live HP every frame (nothing about it is
+        cached at boss entry).
+
+        Why a wipe rather than the crossfade this used to do: the two assets
+        are a filled bar and a hollow frame of the SAME size, so crossfading
+        them does not shorten the bar - it dissolves the fill in place over
+        its whole length, leaving a full-length bar that only fades as HP
+        drops. Over a starfield (which shows through the transparent frame)
+        that is very hard to read as damage. Wiping the fill makes the loss
+        of HP unambiguous.
+        """
+        if self.boss is None:
+            return
+        rect = self._boss_bar_rect()
+        self.screen.blit(self.assets.boss_health_empty_img, rect)
+        fill = self._boss_bar_fill_width(self.boss.hp, self.boss.max_hp, rect.width)
+        if fill > 0:
+            self.screen.blit(
+                self.assets.boss_health_full_img,
+                rect,
+                area=pygame.Rect(0, 0, fill, rect.height),
+            )
 
     def _draw_shield_aura(self) -> None:
         """A translucent cyan bubble around the ship while the shield is up,

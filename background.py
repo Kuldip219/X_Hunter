@@ -69,10 +69,9 @@ class ParallaxBackground:
     def _load_level(self, level: int) -> None:
         """Load the layer pair for the given level index."""
         paths = settings.BG_LAYERS[level]
-        speeds = [
-            settings.BG_L1_FAR_SPEED if level == 0 else settings.BG_L2_FAR_SPEED,
-            settings.BG_L1_NEAR_SPEED if level == 0 else settings.BG_L2_NEAR_SPEED,
-        ]
+        # Per-layer speeds come from settings (one (far, near) pair per
+        # level) so adding a level never needs a new branch here.
+        speeds = settings.BG_LAYER_SPEEDS[level]
         self.layers = []
         for path, speed in zip(paths, speeds):
             img = pygame.image.load(resource_path(path)).convert()
