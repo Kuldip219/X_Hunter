@@ -211,17 +211,12 @@ class GameOverMenu:
         go_rect = go_text.get_rect(
             center=(settings.WIDTH // 2, settings.h_frac(1 / 4))
         )
-        go_shadow = _render_fitted_title(
-            self.assets.big_font, "GAME OVER", max_title_w, settings.BLACK
-        )
-
-        shadow = settings.px(5)
-        screen.blit(go_shadow, (go_rect.x + shadow, go_rect.y + shadow))
-        screen.blit(go_text, go_rect)
-
-        # NOTE: the original code blits this text a second time here (a
-        # no-op, since it's the same surface at the same position). Kept
-        # verbatim per the decision to preserve all quirks exactly as-is.
+        # The heading is rendered and blitted exactly once. This used to be a
+        # black drop shadow plus a duplicate blit of the heading itself - and
+        # the shadow was rendered from the hardcoded string "GAME OVER"
+        # instead of from `title`, so a cleared run drew black "GAME OVER"
+        # glyphs showing through the gaps of its gold "Wanna go
+        # again....?" heading.
         screen.blit(go_text, go_rect)
 
         _draw_button(screen, self.assets.restart_img, self.restart_rect, mouse_pos)

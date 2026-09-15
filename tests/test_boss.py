@@ -13,9 +13,11 @@ Covers the whole contract:
   end-of-run screen (there is deliberately no dedicated victory screen).
 """
 
+import numpy as np
 import pytest
 import pygame
 
+import menus
 import settings
 from boss import Boss
 from bullet import Bullet
@@ -113,6 +115,47 @@ def _no_enemies(game) -> None:
 
 def _draw_on_black(game) -> None:
     game.screen.fill(settings.BLACK)
+
+
+class _BlitRecorder:
+    """A stand-in screen that records which surfaces get blitted to it."""
+
+    def __init__(self, inner: pygame.Surface) -> None:
+        self._inner = inner
+        self.calls: list[pygame.Surface] = []
+
+    def blit(self, source, dest, *args, **kwargs):
+        self.calls.append(source)
+        return self._inner.blit(source, dest, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def count(self, surface: pygame.Surface) -> int:
+        return sum(1 for blitted in self.calls if blitted is surface)
+
+
+def _dilate(mask: "np.ndarray") -> "np.ndarray":
+    """Grow a boolean mask by one pixel on each side.
+
+    Antialiased glyph edges only partly cover their pixels, so a rendered
+    glyph's ink can spill a pixel past its own alpha mask.
+    """
+    out = mask.copy()
+    out[1:, :] |= mask[:-1, :]
+    out[:-1, :] |= mask[1:, :]
+    out[:, 1:] |= mask[:, :-1]
+    out[:, :-1] |= mask[:, 1:]
+    return out
+
+
+# The end-of-run screen has two variants: a run that beat the final boss
+# (gold, "Wanna go again....?") and a death (red, "GAME OVER").
+# (finished, expected heading text, expected heading colour)
+_END_OF_RUN_VARIANTS = [
+    (True, settings.GAME_COMPLETE_TITLE, settings.GAME_COMPLETE_COLOR),
+    (False, "GAME OVER", settings.GAME_OVER_COLOR),
+]
 
 
 # ── Stats, hitbox, phase thresholds ───────────────────────────────────
@@ -902,9 +945,13 @@ class TestEndOfRunScreen:
         alpha = pygame.surfarray.array_alpha(expected)
         actual = pygame.surfarray.array3d(game.screen.subsurface(rect))
         wanted = pygame.surfarray.array3d(expected)
-        # Compare only fully-opaque glyph pixels: antialiased edges blend with
-        # whatever is behind them.
-        mask = alpha > 250
+        # Compare only fully-opaque glyph pixels (alpha == 255): antialiased
+        # edges deliberately blend with the background. The mask used to be
+        # alpha > 250, which was only pixel-exact while the heading was
+        # blitted twice - the redundant blit re-blended those edge pixels
+        # onto the source colour (see
+        # test_heading_is_rendered_and_blitted_once).
+        mask = alpha == 255
         assert mask.any(), 'the heading should render solid glyph pixels'
         assert (actual[mask] == wanted[mask]).all(), (
             'the cleared-run heading is not the game-complete copy in its gold'
@@ -922,7 +969,9 @@ class TestEndOfRunScreen:
         alpha = pygame.surfarray.array_alpha(expected)
         actual = pygame.surfarray.array3d(game.screen.subsurface(rect))
         wanted = pygame.surfarray.array3d(expected)
-        mask = alpha > 250
+        # Fully-opaque glyph cores only - the antialiased edges blend with
+        # the background (see test_heading_is_rendered_and_blitted_once).
+        mask = alpha == 255
         assert mask.any()
         assert (actual[mask] == wanted[mask]).all(), 'a death still reads GAME OVER'
 
@@ -1002,3 +1051,87 @@ class TestEndOfRunScreen:
         game._handle_mouse_click(game.game_over_menu.quit_rect.center)
         pump_fade(game)
         assert game.state == 'menu'
+
+    @pytest.mark.parametrize('finished, title, color', _END_OF_RUN_VARIANTS)
+    def test_heading_is_rendered_and_blitted_once(
+        self, game, monkeypatch, finished, title, color
+    ):
+        """Exactly one heading render and one heading blit, both variants.
+
+        Regression for the reported black-text artifact: `draw()` rendered
+        the heading twice - a black drop shadow built from the *hardcoded*
+        string "GAME OVER" (so a cleared run got black "GAME OVER" glyphs
+        behind its gold heading), plus a duplicate blit of the heading
+        surface itself.
+        """
+        renders: list[tuple[str, tuple[int, int, int], pygame.Surface]] = []
+        original = menus._render_fitted_title
+
+        def spy(font, text, max_width, render_color):
+            surface = original(font, text, max_width, render_color)
+            renders.append((text, render_color, surface))
+            return surface
+
+        monkeypatch.setattr(menus, '_render_fitted_title', spy)
+        recorder = _BlitRecorder(game.screen)
+        game.game_over_menu.draw(recorder, (0, 0), title=title, color=color)
+
+        assert len(renders) == 1, f'the heading was rendered {len(renders)} times'
+        rendered_text, rendered_color, surface = renders[0]
+        assert rendered_text == title, 'the screen rendered a different string'
+        assert rendered_color == color
+        assert recorder.count(surface) == 1, 'the heading was blitted more than once'
+        assert recorder.calls, 'the screen drew nothing at all'
+
+    @pytest.mark.parametrize('finished, title, color', _END_OF_RUN_VARIANTS)
+    def test_only_the_headings_own_glyphs_are_drawn(
+        self, game, finished, title, color
+    ):
+        """Nothing is drawn in the heading band except the heading's glyphs.
+
+        The reported artifact was a black ghost showing through the gaps of
+        the gold heading - the old shadow, rendered from a hardcoded "GAME
+        OVER". Everything the heading contributes is isolated here by
+        re-rendering the identical screen with the heading suppressed and
+        diffing the two frames.
+        """
+        game.run_finished = finished
+        game.state = 'game_over'
+        _draw_on_black(game)
+        game._draw_frame((0, 0))
+        with_heading = pygame.surfarray.array3d(game.screen).astype(int)
+
+        menu = game.game_over_menu
+        original_draw = menu.draw
+
+        def headingless(screen, mouse_pos, title='GAME OVER', color=None):
+            return original_draw(screen, mouse_pos, title='', color=color)
+
+        menu.draw = headingless
+        try:
+            _draw_on_black(game)
+            game._draw_frame((0, 0))
+            without_heading = pygame.surfarray.array3d(game.screen).astype(int)
+        finally:
+            del menu.draw
+
+        delta = np.abs(with_heading - without_heading).max(axis=2) > 8
+        assert delta.any(), 'the heading itself should have been drawn'
+
+        surface = _render_fitted_title(
+            game.assets.big_font,
+            title,
+            settings.WIDTH - 2 * settings.GAME_TITLE_MARGIN_X,
+            color,
+        )
+        rect = surface.get_rect(center=(settings.WIDTH // 2, settings.h_frac(1 / 4)))
+        alpha = pygame.surfarray.array_alpha(surface)
+        glyphs = np.zeros((settings.WIDTH, settings.HEIGHT), bool)
+        glyphs[rect.left:rect.right, rect.top:rect.bottom] = alpha > 0
+        glyphs = _dilate(glyphs)
+
+        stray = int((delta & ~glyphs).sum())
+        assert stray == 0, (
+            f'{stray} px of ink outside the heading\'s own glyphs - a ghost '
+            f'glyph such as the old hardcoded "GAME OVER" shadow'
+        )
