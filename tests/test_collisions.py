@@ -36,7 +36,10 @@ def test_bullet_enemy_edge_overlap_hits(game):
     start_game(game)
     e = Enemy(200, 300)
     game.enemies = [e]
-    game.bullets = [Bullet(249, 320)]  # 1px overlap on the enemy's right edge
+    # 1px overlap on the enemy's right edge. Expressed against the hitbox
+    # itself (rather than a literal) so the scenario still describes a 1px
+    # overlap whatever the enemy's proportional size is.
+    game.bullets = [Bullet(e.x + e.width - 1, e.y + e.height // 2)]
     score0 = game.score
     game._update_game(KeyState())
     assert game.score == score0 + 1
@@ -46,8 +49,8 @@ def test_bullet_enemy_collision_requires_overlap(game):
     start_game(game)
     e = Enemy(200, 300)
     game.enemies = [e]
-    # Bullet 1px clear of the enemy's right edge (enemy spans x 200..250).
-    game.bullets = [Bullet(251, 320)]
+    # Bullet 1px clear of the enemy's right edge.
+    game.bullets = [Bullet(e.x + e.width + 1, e.y + e.height // 2)]
     score0 = game.score
     game._update_game(KeyState())
     assert game.score == score0

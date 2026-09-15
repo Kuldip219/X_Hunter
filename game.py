@@ -164,7 +164,7 @@ class Game:
         """
         self.player = Player(
             settings.WIDTH // 2,
-            settings.HEIGHT - 80,
+            settings.PLAYER_START_Y,
             bindings=self.user_settings.key_bindings,
         )
         self.bullets = []
@@ -554,7 +554,7 @@ class Game:
                 # this reset the player stays invisible for the entire next
                 # level.
                 self.player.x = settings.WIDTH // 2 - self.player.width // 2
-                self.player.y = settings.HEIGHT - 80
+                self.player.y = settings.PLAYER_START_Y
 
                 self._level_intro_pending = True
                 phase_num = self.current_level + 1
@@ -696,7 +696,8 @@ class Game:
     def _draw_mute_indicator(self) -> None:
         """Small 'MUTED' label in the top-right corner while audio is off."""
         text = self.assets.font.render("MUTED", True, settings.LIGHT_GRAY)
-        rect = text.get_rect(topright=(settings.WIDTH - 10, 10))
+        margin = settings.w_frac(1 / 60)
+        rect = text.get_rect(topright=(settings.WIDTH - margin, margin))
         self.screen.blit(text, rect)
 
     # ------------------------------------------------------------------ #
@@ -1126,7 +1127,7 @@ class Game:
             )
             gunner_drift = min(
                 settings.GUNNER_DRIFT_SPEED_PER_SEC + int(settings.ENEMY_SPEED_GAIN_PER_SEC * diff * 0.3),
-                300,
+                settings.px(300),  # authored cap, scaled with the playfield
             )
             for gunner in self.gunners:
                 gunner.descend_speed = gunner_speed
@@ -1375,7 +1376,7 @@ class Game:
             self.player.x + self.player.width // 2 + self.shake_offset[0],
             self.player.y + self.player.height // 2 + self.shake_offset[1],
         )
-        radius = max(self.player.width, self.player.height) // 2 + 14
+        radius = max(self.player.width, self.player.height) // 2 + settings.px(14)
         aura = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
         pygame.draw.circle(aura, (*settings.SHIELD_AURA_COLOR, 60), (radius, radius), radius)
         pygame.draw.circle(aura, (*settings.SHIELD_AURA_COLOR, 220), (radius, radius), radius, 3)

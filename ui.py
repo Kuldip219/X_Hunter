@@ -113,18 +113,23 @@ def draw_health_bar(
     screen: pygame.Surface,
     health_images: list[pygame.Surface],
     health: int,
-    pos: tuple[int, int] = (10, 10),
+    pos: tuple[int, int] | None = None,
 ) -> None:
-    screen.blit(health_images[health], pos)
+    """Blit the health bar at `pos`, defaulting to the settings HUD anchor
+    (a proportional position, so the HUD never drifts with resolution)."""
+    screen.blit(health_images[health], settings.PLAYER_HEALTH_POS if pos is None else pos)
 
 
 def draw_score(
     screen: pygame.Surface,
     font: pygame.font.Font,
     score: int,
-    pos: tuple[int, int] = (10, 10),
+    pos: tuple[int, int] | None = None,
     color: tuple[int, int, int] = settings.SCORE_COLOR,
 ) -> None:
+    """Blit the score readout, defaulting to the settings HUD anchor."""
+    if pos is None:
+        pos = settings.PLAYER_HEALTH_POS
     text = font.render(f"Score: {score}", True, color)
     screen.blit(text, pos)
 

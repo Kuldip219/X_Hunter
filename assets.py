@@ -150,11 +150,14 @@ class Assets:
             "Assets/boss_health_bar_empty.png", settings.BOSS_HEALTH_BAR_SIZE, (70, 70, 70, 255)
         )
 
+        # Health bar segments: scaled to the settings footprint (the 200x70
+        # authored size), so the HUD grows with the window like everything
+        # else on screen.
         health_images = [
             pygame.image.load(resource_path(f"Assets/health_{i}.png")) for i in range(6)
         ]
         health_images = [
-            pygame.transform.scale(img, (200, 70)) for img in health_images
+            pygame.transform.scale(img, settings.HEALTH_IMG_SIZE) for img in health_images
         ]
 
         explosion_frames = []

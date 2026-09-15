@@ -40,7 +40,14 @@ def _active_boss(hp: int | None = None) -> Boss:
     return boss
 
 
-def _run_boss(boss: Boss, seconds: float, player_x: float = 300.0):
+# Screen coordinates in this suite are authored on the 600x800 canvas and
+# passed through settings.px(), so the scenarios below describe the same
+# relative geometry at any window size (a raw literal would silently become
+# a different position once the resolution changed).
+PX = settings.px
+
+
+def _run_boss(boss: Boss, seconds: float, player_x: float = PX(300)):
     """Advance a boss for `seconds` of fixed steps.
 
     Returns (bullets, minions, charge_seen, burst_seen).
@@ -137,7 +144,7 @@ class TestEntrance:
         previous = boss.y
         steps = 0
         while boss.entering and steps < 600:
-            bullets, minions = boss.update(DT, 300.0, settings.WIDTH)
+            bullets, minions = boss.update(DT, PX(300), settings.WIDTH)
             assert bullets == [] and minions == 0, 'the boss must not attack while entering'
             assert boss.y >= previous, 'entrance must be monotonically downward'
             previous = boss.y
@@ -152,7 +159,7 @@ class TestEntrance:
         for _ in range(120):
             if not boss.entering:
                 break
-            boss.update(DT, 300.0, settings.WIDTH)
+            boss.update(DT, PX(300), settings.WIDTH)
         assert boss.x == x0, 'the boss should drop straight in, not drift while entering'
 
 
@@ -166,7 +173,7 @@ class TestMovement:
         right = settings.WIDTH - boss.width - settings.BOSS_DRIFT_MARGIN
         xs = []
         for _ in range(int(20 / DT)):
-            boss.update(DT, 300.0, settings.WIDTH)
+            boss.update(DT, PX(300), settings.WIDTH)
             xs.append(boss.x)
         assert min(xs) >= left - 1e-6
         assert max(xs) <= right + 1e-6
@@ -192,7 +199,7 @@ class TestMovement:
         boss = _active_boss()
         offsets = []
         for _ in range(int(settings.BOSS_BOB_PERIOD_SECONDS / DT) + 2):
-            boss.update(DT, 300.0, settings.WIDTH)
+            boss.update(DT, PX(300), settings.WIDTH)
             offsets.append(boss.y - boss.base_y)
         assert max(offsets) > 1, 'boss should bob above its base'
         assert min(offsets) < -1, 'boss should bob below its base'
@@ -206,7 +213,7 @@ class TestMovement:
         fired_while_moving = False
         last_x = boss.x
         for _ in range(int(6 / DT)):
-            bullets, _minions, _c, _b = _run_boss(boss, DT, 300.0)
+            bullets, _minions, _c, _b = _run_boss(boss, DT, PX(300))
             xs.append(boss.x)
             if bullets and abs(boss.x - last_x) > 0:
                 fired_while_moving = True
@@ -256,7 +263,7 @@ class TestAttackPhases:
         """The volley must visibly leave the boss - not materialise at the
         tracked column, which is often a ship-width away in mid-air."""
         boss = _active_boss(hp=20)
-        player_x, player_y = 120.0, 700.0
+        player_x, player_y = float(PX(120)), float(PX(700))
         shots = _burst_volley(boss, player_x, player_y)
         assert len(shots) == settings.BOSS_AIM_BURST_COUNT
         for (muzzle_x, muzzle_y), bullet in shots:
@@ -268,7 +275,7 @@ class TestAttackPhases:
 
     def test_burst_shots_still_converge_on_the_tracked_position(self):
         boss = _active_boss(hp=20)
-        player_x, player_y = 120.0, 700.0
+        player_x, player_y = float(PX(120)), float(PX(700))
         shots = _burst_volley(boss, player_x, player_y)
         assert shots
         for _muzzle, bullet in shots:
@@ -281,7 +288,7 @@ class TestAttackPhases:
         """The three shots leave on nearly the same line - re-aiming per shot
         must not turn the burst into a fan of its own."""
         boss = _active_boss(hp=20)
-        shots = _burst_volley(boss, 120.0, 700.0)
+        shots = _burst_volley(boss, float(PX(120)), float(PX(700)))
         angles = [b.angle_degrees for _m, b in shots]
         assert max(angles) - min(angles) < 5.0
 
@@ -289,7 +296,7 @@ class TestAttackPhases:
         boss = _active_boss(hp=20)
         # A target far off to the side must not produce a flat/horizontal shot.
         boss.aim_target_x = -5_000.0
-        boss.aim_target_y = 760.0
+        boss.aim_target_y = float(PX(760))
         assert boss._aim_angle() == pytest.approx(
             -settings.BOSS_AIM_MAX_ANGLE_DEGREES
         )
@@ -302,13 +309,13 @@ class TestAttackPhases:
         """Callers that only track the player horizontally still get a
         sensibly aimed volley (no horizontal spray)."""
         boss = _active_boss(hp=20)
-        shots = _burst_volley(boss, 520.0, settings.BOSS_AIM_DEFAULT_TARGET_Y)
+        shots = _burst_volley(boss, float(PX(520)), settings.BOSS_AIM_DEFAULT_TARGET_Y)
         assert shots
         for _muzzle, bullet in shots:
             assert bullet.vy > 0
             assert _shot_crossing_x(
                 bullet, settings.BOSS_AIM_DEFAULT_TARGET_Y
-            ) == pytest.approx(520.0, abs=2.0)
+            ) == pytest.approx(PX(520), abs=2.0)
 
     def test_burst_tracks_the_player_until_it_fires(self):
         """The charge window re-tracks every step, so a moving player is
@@ -319,16 +326,16 @@ class TestAttackPhases:
         boss.aim_charge = settings.BOSS_AIM_CHARGE_SECONDS
         # Move the player across the screen during the charge.
         for i in range(int(settings.BOSS_AIM_CHARGE_SECONDS / DT) - 1):
-            boss.update(DT, 100.0 + i * 10.0, settings.WIDTH, 700.0)
-        # The charge completes on this step: the target locks to x=500.
-        boss.update(DT, 500.0, settings.WIDTH, 700.0)
+            boss.update(DT, PX(100) + i * PX(10), settings.WIDTH, PX(700))
+        # The charge completes on this step: the target locks to the 500 mark.
+        boss.update(DT, PX(500), settings.WIDTH, PX(700))
         fired: list[EnemyBullet] = []
         for _ in range(30):
-            fired, _m, _c, _b = _run_boss(boss, DT, 999.0)
+            fired, _m, _c, _b = _run_boss(boss, DT, PX(999))
             if fired:
                 break
         assert fired, 'the burst should fire once the charge completes'
-        assert _shot_crossing_x(fired[0], 700.0) == pytest.approx(500.0, abs=2.0)
+        assert _shot_crossing_x(fired[0], PX(700)) == pytest.approx(PX(500), abs=2.0)
 
     def test_aim_charge_is_the_telegraph_window(self):
         boss = _active_boss(hp=20)
@@ -338,7 +345,7 @@ class TestAttackPhases:
         # Charge lasts about BOSS_AIM_CHARGE_SECONDS of simulated time.
         steps = 0
         while boss.aim_target_visible() and steps < 1000:
-            boss.update(DT, 300.0, settings.WIDTH)
+            boss.update(DT, PX(300), settings.WIDTH)
             steps += 1
         assert steps == pytest.approx(
             settings.BOSS_AIM_CHARGE_SECONDS / DT, abs=2
@@ -679,7 +686,8 @@ class TestBossHealthBar:
         width = settings.BOSS_HEALTH_BAR_SIZE[0]
         assert Game._boss_bar_fill_width(40, 40, width) == width
         assert Game._boss_bar_fill_width(0, 40, width) == 0
-        assert Game._boss_bar_fill_width(20, 40, width) == width // 2
+        # Half HP fills half the bar (round() covers an odd bar width).
+        assert Game._boss_bar_fill_width(20, 40, width) == round(width / 2)
         # Monotonic: more HP is never a shorter fill.
         widths = [Game._boss_bar_fill_width(hp, 40, width) for hp in range(41)]
         assert widths == sorted(widths)

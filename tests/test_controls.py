@@ -93,8 +93,12 @@ def test_controls_rows_single_column_generous_spacing(game):
     CONTROLS_ROW_GAP between rows (no 2x3 grid needed anymore)."""
     ys = game.controls_screen.row_ys
     assert len(ys) == len(settings.CONTROLS)
+    # Rows are spaced by the authored gap scaled to the window (the pitch is
+    # derived per row from its authored offset, so the step is consistent to
+    # within px()'s rounding).
     for a, b in zip(ys, ys[1:]):
-        assert b - a == settings.CONTROLS_ROW_GAP
+        assert abs((b - a) - settings.CONTROLS_ROW_GAP) <= 1
+    assert ys[0] == settings.CONTROLS_ROWS_TOP
 
 
 # ---------------------------------------------------------------------- #

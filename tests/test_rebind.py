@@ -60,8 +60,11 @@ def test_edit_button_same_size_as_back_button(game):
     bw, bh = game.assets.back_img.get_size()
     assert ew == bw
     assert eh == bh
-    # The rendered canvas matches the documented footprint constant.
-    assert (ew, eh) == settings.EDIT_IMG_SIZE
+    # The rendered canvas matches the documented footprint constant. The
+    # aspect-fit integer division can land a pixel away from settings.px()'s
+    # rounding, so allow that one pixel.
+    assert abs(ew - settings.EDIT_IMG_SIZE[0]) <= 1
+    assert abs(eh - settings.EDIT_IMG_SIZE[1]) <= 1
     # Actual rects on the Controls screen share the same dimensions.
     screen = _enter_edit_mode(game)
     assert screen.edit_rect.width == screen.back_rect.width

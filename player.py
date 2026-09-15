@@ -161,11 +161,15 @@ class Player:
             self.health = 0
 
             self.explosion = Explosion(
-                self.x - 10, self.y - 10, frame_delay=settings.PLAYER_EXPLOSION_FRAME_DELAY
+                self.x - settings.px(10),
+                self.y - settings.px(10),
+                frame_delay=settings.PLAYER_EXPLOSION_FRAME_DELAY,
             )
 
-            self.x = -1000
-            self.y = -1000
+            # Park the dead ship far off-screen (a sentinel, not a position).
+            # Scaled with the playfield so it stays outside any window size.
+            self.x = -settings.px(1000)
+            self.y = -settings.px(1000)
 
             self.dead = True
             return True

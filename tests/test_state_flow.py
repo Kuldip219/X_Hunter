@@ -166,7 +166,8 @@ def test_hud_health_bar_at_top_position(game):
 
 
 def test_hud_powerup_status_shifted_up(game):
-    """Power-up status renders at the new POWERUP_STATUS_Y (shifted up 40px)."""
+    """Power-up status renders at POWERUP_STATUS_Y (shifted up clear of the
+    old score bar, and scaled with the window like the rest of the HUD)."""
     import settings
     from helpers import start_game, KeyState
     start_game(game)
@@ -181,7 +182,9 @@ def test_hud_powerup_status_shifted_up(game):
     assert (r, g, b) != (0, 0, 0), (
         f"Power-up status not visible at ({x}, {y})"
     )
-    # Verify the y-coordinate is the new value (95), not the old (135).
-    assert settings.POWERUP_STATUS_Y == 95, (
-        f"POWERUP_STATUS_Y should be 95, got {settings.POWERUP_STATUS_Y}"
+    # Verify the y-coordinate is the shifted-up value: the authored row 95
+    # (not the old 135, which left room for the since-hidden score bar),
+    # scaled to the live window.
+    assert settings.POWERUP_STATUS_Y == settings.px(95), (
+        f"POWERUP_STATUS_Y should be {settings.px(95)}, got {settings.POWERUP_STATUS_Y}"
     )

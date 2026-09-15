@@ -90,33 +90,37 @@ def test_dt_clamp_caps_movement_after_large_spike(game):
 # --------------------------------------------------------------------- #
 
 def test_px_per_second_constants_match_old_px_per_frame_at_target_fps():
-    # Old frame-based values (px/frame) this conversion preserves at 60 FPS:
-    # new px/s must equal old px/frame * FPS exactly.
-    old_per_frame = {
+    # Old frame-based values (px/frame on the authored 600x800 canvas) this
+    # conversion preserves at 60 FPS: the px/s constant must equal the old
+    # px/frame * FPS, scaled to the live window by settings.px().
+    authored_per_frame = {
         settings.PLAYER_SPEED_PER_SEC: 5,
         settings.ENEMY_SPEED_PER_SEC: 5,
         settings.BULLET_SPEED_PER_SEC: 10,
         settings.ENEMY_SPEED_GAIN_PER_SEC: 4,
         settings.ENEMY_MAX_SPEED_PER_SEC: 9,
     }
-    for per_sec, per_frame in old_per_frame.items():
-        assert per_sec == per_frame * settings.FPS
+    for per_sec, per_frame in authored_per_frame.items():
+        assert per_sec == settings.px(per_frame * settings.FPS)
 
 
 def test_motion_matches_old_per_frame_behavior_at_target_fps():
     # One frame at 60 FPS under the new scheme moves exactly as far as one
-    # frame of the old px/frame scheme did.
+    # frame of the old px/frame scheme did, scaled to the live window. px()
+    # rounds to whole pixels, so allow the sub-pixel difference between it
+    # and the exact speed/FPS division.
     e = Enemy(0, 0)
     e.update(1.0 / settings.FPS)
-    assert e.y == 5.0  # old ENEMY_SPEED
+    assert e.y == pytest.approx(settings.ENEMY_SPEED_PER_SEC / settings.FPS)
+    assert e.y == pytest.approx(settings.px(5), abs=0.75)  # authored ENEMY_SPEED
 
-    b = Bullet(0, 100)
+    b = Bullet(0, settings.px(100))
     b.update(1.0 / settings.FPS)
-    assert b.y == 90.0  # old BULLET_SPEED = 10, moving up
+    assert b.y == pytest.approx(settings.px(100) - settings.px(10), abs=0.75)
 
-    p = Player(100, 600)
+    p = Player(settings.px(100), settings.px(600))
     p.handle_input(KeyState(pygame.K_RIGHT), 1.0 / settings.FPS)
-    assert p.x == 105.0  # old PLAYER_SPEED = 5
+    assert p.x == pytest.approx(settings.px(100) + settings.px(5), abs=0.75)
 
 
 # --------------------------------------------------------------------- #
@@ -132,9 +136,11 @@ def test_fire_cadence_same_shots_per_second_at_30_and_60_fps(game):
         # that could consume bullets mid-count; park a full field far above
         # the action instead (deterministic, no collisions possible).
         game.enemies = [
-            Enemy(0, -2000) for _ in range(settings.INITIAL_ENEMY_COUNT)
+            Enemy(0, settings.px(-2000)) for _ in range(settings.INITIAL_ENEMY_COUNT)
         ]
-        game.player.y = 600
+        # Authored 600 (proportionally the same row as before the resize), so
+        # a bullet fired at t=0 is still on screen when the second ends.
+        game.player.y = settings.px(600)
         game.bullets = []
 
     # 1 simulated second of holding fire at 60 fps: shots at t = 0, .2, .4,

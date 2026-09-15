@@ -53,13 +53,24 @@ class MainMenu:
         self.assets = assets
         self.audio = audio
         self._last_hovered = None
-        self.title_rect = assets.title_img.get_rect(center=(screen_width // 2, 150))
-        # Uniform 100px center-to-center spacing (the original layout):
-        # play -> options -> exit. Positions were temporarily re-spaced for
-        # a third button (HIGH SCORES) and never restored when it was removed.
-        self.play_rect = assets.play_img.get_rect(center=(screen_width // 2, 300))
-        self.options_rect = assets.options_img.get_rect(center=(screen_width // 2, 400))
-        self.exit_rect = assets.exit_img.get_rect(center=(screen_width // 2, 500))
+        # Vertical anchors are fractions of the screen height (not pixels),
+        # so the menu re-proportions itself automatically at any resolution.
+        # They keep the original uniform 100/800 = 1/8 screen-height
+        # centre-to-centre rhythm: title -> play -> options -> exit. Positions
+        # were temporarily re-spaced for a third button (HIGH SCORES) and
+        # never restored when it was removed.
+        self.title_rect = assets.title_img.get_rect(
+            center=(screen_width // 2, settings.h_frac(3 / 16))
+        )
+        self.play_rect = assets.play_img.get_rect(
+            center=(screen_width // 2, settings.h_frac(3 / 8))
+        )
+        self.options_rect = assets.options_img.get_rect(
+            center=(screen_width // 2, settings.h_frac(1 / 2))
+        )
+        self.exit_rect = assets.exit_img.get_rect(
+            center=(screen_width // 2, settings.h_frac(5 / 8))
+        )
 
     def _buttons(self) -> list[tuple[str, pygame.Rect]]:
         return [
@@ -94,9 +105,17 @@ class PauseMenu:
         self.assets = assets
         self.audio = audio
         self._last_hovered = None
-        self.pause_rect = assets.pause_img.get_rect(center=(screen_width // 2, 200))
-        self.continue_rect = assets.continue_img.get_rect(center=(screen_width // 2, 350))
-        self.quit_rect = assets.quit_img.get_rect(center=(screen_width // 2, 450))
+        # Screen-height fractions (see MainMenu): 1/4 down for the banner,
+        # then the two buttons on the original 100/800 rhythm.
+        self.pause_rect = assets.pause_img.get_rect(
+            center=(screen_width // 2, settings.h_frac(1 / 4))
+        )
+        self.continue_rect = assets.continue_img.get_rect(
+            center=(screen_width // 2, settings.h_frac(7 / 16))
+        )
+        self.quit_rect = assets.quit_img.get_rect(
+            center=(screen_width // 2, settings.h_frac(9 / 16))
+        )
 
     def _buttons(self) -> list[tuple[str, pygame.Rect]]:
         return [("continue", self.continue_rect), ("quit", self.quit_rect)]
@@ -127,12 +146,16 @@ class GameOverMenu:
         self.assets = assets
         self.audio = audio
         self._last_hovered = None
-        # Uniform 100px center-to-center spacing (matches the pause menu and
-        # the original game-over layout): restart -> quit. The 490 position
-        # was a leftover from when a HIGH SCORES button sat between them at
-        # 410 - removed without recomputing QUIT's position.
-        self.restart_rect = assets.restart_img.get_rect(center=(screen_width // 2, 350))
-        self.quit_rect = assets.quit_gameover_img.get_rect(center=(screen_width // 2, 450))
+        # Uniform 100/800 screen-height spacing (matches the pause menu and
+        # the original game-over layout): restart -> quit. The old 490 row was
+        # a leftover from when a HIGH SCORES button sat between them at 410 -
+        # removed without recomputing QUIT's position.
+        self.restart_rect = assets.restart_img.get_rect(
+            center=(screen_width // 2, settings.h_frac(7 / 16))
+        )
+        self.quit_rect = assets.quit_gameover_img.get_rect(
+            center=(screen_width // 2, settings.h_frac(9 / 16))
+        )
 
     def _buttons(self) -> list[tuple[str, pygame.Rect]]:
         return [
@@ -156,10 +179,13 @@ class GameOverMenu:
         if color is None:
             color = settings.GAME_OVER_COLOR
         go_text = self.assets.big_font.render(title, True, color)
-        go_rect = go_text.get_rect(center=(settings.WIDTH // 2, 200))
+        go_rect = go_text.get_rect(
+            center=(settings.WIDTH // 2, settings.h_frac(1 / 4))
+        )
         go_shadow = self.assets.big_font.render("GAME OVER", True, settings.BLACK)
 
-        screen.blit(go_shadow, (go_rect.x + 5, go_rect.y + 5))
+        shadow = settings.px(5)
+        screen.blit(go_shadow, (go_rect.x + shadow, go_rect.y + shadow))
         screen.blit(go_text, go_rect)
 
         # NOTE: the original code blits this text a second time here (a
@@ -221,7 +247,7 @@ class OptionsScreen:
         for name, label in (("music", "Music Volume"), ("sfx", "SFX Volume")):
             anchor = y + label_h // 2
             track = pygame.Rect(0, 0, track_size[0], track_size[1])
-            track.center = (screen_width // 2 + 50, anchor)
+            track.center = (screen_width // 2 + settings.px(50), anchor)
             self.slider_tracks[name] = track
             self.slider_labels[name] = (label, anchor)
             y += label_h + settings.OPTIONS_ITEM_GAP
@@ -290,8 +316,9 @@ class OptionsScreen:
     def _hit_slider(self, pos: tuple[int, int]) -> Optional[str]:
         """Which slider (if any) the mouse is on. The hit zone extends above
         and below the track so the handle is grabbable too."""
+        grab_pad = settings.px(30)
         for name, track in self.slider_tracks.items():
-            if track.inflate(0, 30).collidepoint(pos):
+            if track.inflate(0, grab_pad).collidepoint(pos):
                 return name
         return None
 
@@ -334,7 +361,12 @@ class OptionsScreen:
             )
 
         label_img = self.assets.font.render(label, True, settings.WHITE)
-        screen.blit(label_img, label_img.get_rect(midleft=(70, y)))
+        # Label pinned to a fixed left margin, percentage pinned to a fixed
+        # right margin - both expressed as fractions of the screen width so
+        # they never drift off the edges at another resolution.
+        screen.blit(
+            label_img, label_img.get_rect(midleft=(settings.w_frac(7 / 60), y))
+        )
 
         # Track: dark bar with a lighter border.
         pygame.draw.rect(screen, (45, 45, 45), track)
@@ -346,7 +378,9 @@ class OptionsScreen:
         pygame.draw.rect(screen, settings.WHITE, handle)
 
         pct_img = self.assets.font.render(f"{int(round(value * 100))}%", True, settings.LIGHT_GRAY)
-        screen.blit(pct_img, pct_img.get_rect(midright=(570, y)))
+        screen.blit(
+            pct_img, pct_img.get_rect(midright=(self.screen_width - settings.w_frac(1 / 20), y))
+        )
 
     def draw(self, screen: pygame.Surface, mouse_pos: tuple[int, int]) -> None:
         title = self.assets.big_font.render("OPTIONS", True, settings.WHITE)
@@ -394,25 +428,32 @@ class ControlsScreen:
         self.screen_height = screen_height
         self.store = store
         self.back_img = assets.back_img
+        # Bottom-anchored: a fixed fraction of the screen height above the
+        # bottom edge, so the button keeps its margin at any resolution.
         self.back_rect = self.back_img.get_rect(
-            center=(screen_width // 2, screen_height - 70)
+            center=(screen_width // 2, screen_height - settings.h_frac(7 / 80))
         )
         self.edit_img = assets.edit_img
         self.edit_rect = self.edit_img.get_rect(
             center=(screen_width // 2, settings.CONTROLS_EDIT_Y)
         )
         self.title_y = settings.CONTROLS_TITLE_Y
+        # Each row from its own authored total offset (px(220 + 55i)) so the
+        # stack cannot drift as rows get added - see settings.py.
         self.row_ys = [
-            settings.CONTROLS_ROWS_TOP + i * settings.CONTROLS_ROW_GAP
+            settings.px(settings.CONTROLS_ROWS_TOP_AUTHORED + i * settings.CONTROLS_ROW_GAP_AUTHORED)
             for i in range(len(settings.CONTROLS))
         ]
-        # Click targets for the rebindable rows (edit mode only).
+        # Click targets for the rebindable rows (edit mode only). Sized from
+        # the same proportional row metrics as the drawn text, so the hit
+        # zone keeps covering the row at any resolution.
+        rect_h = settings.px(44)
         self.row_rects = [
             pygame.Rect(
-                settings.CONTROLS_ACTION_X - 10,
-                y - 22,
-                settings.CONTROLS_KEY_X - settings.CONTROLS_ACTION_X + 40,
-                44,
+                settings.CONTROLS_ACTION_X - settings.px(10),
+                y - rect_h // 2,
+                settings.CONTROLS_KEY_X - settings.CONTROLS_ACTION_X + settings.px(40),
+                rect_h,
             )
             for y in self.row_ys
         ]
@@ -573,7 +614,7 @@ class HighScoresMenu:
         self.screen_height = screen_height
         self.back_img = assets.back_img
         self.back_rect = self.back_img.get_rect(
-            center=(screen_width // 2, screen_height - 70)
+            center=(screen_width // 2, screen_height - settings.h_frac(7 / 80))
         )
 
     def _buttons(self) -> list[tuple[str, pygame.Rect]]:
@@ -590,13 +631,25 @@ class HighScoresMenu:
         # NOTE: screen.fill removed — the static background is drawn by
         # Game._draw_frame() before this method is called.
         title = self.assets.big_font.render("HIGH SCORES", True, settings.WHITE)
-        screen.blit(title, title.get_rect(center=(self.screen_width // 2, 120)))
+        screen.blit(
+            title, title.get_rect(center=(self.screen_width // 2, settings.h_frac(3 / 20)))
+        )
 
         entries = self.table.entries if self.table is not None else []
         if not entries:
             empty = self.assets.font.render("No runs yet", True, settings.LIGHT_GRAY)
-            screen.blit(empty, empty.get_rect(center=(self.screen_width // 2, 300)))
+            screen.blit(
+                empty, empty.get_rect(center=(self.screen_width // 2, settings.h_frac(3 / 8)))
+            )
         else:
+            # Column x-positions as screen-width fractions (the old 120/190/
+            # 480/560 on a 600 wide screen) and a row pitch from the authored
+            # geometry, so the table keeps its proportions and column
+            # alignment at any size.
+            rank_x = settings.w_frac(1 / 5)
+            time_x = settings.w_frac(19 / 60)
+            result_x = settings.w_frac(4 / 5)
+            new_x = settings.w_frac(14 / 15)
             for i, entry in enumerate(entries[: settings.HIGHSCORE_MAX]):
                 highlighted = highlight_rank is not None and i == highlight_rank
                 color = settings.SCORE_COLOR if highlighted else settings.WHITE
@@ -606,13 +659,16 @@ class HighScoresMenu:
                     (100, 255, 100) if entry.result == "Finished" else (255, 100, 100)
                 )
                 result_img = self.assets.font.render(entry.result, True, result_color)
-                row_y = 200 + i * 42
-                screen.blit(rank_img, rank_img.get_rect(midleft=(120, row_y)))
-                screen.blit(time_img, time_img.get_rect(midleft=(190, row_y)))
-                screen.blit(result_img, result_img.get_rect(midright=(480, row_y)))
+                row_y = settings.px(
+                    settings.HIGHSCORE_ROWS_TOP_AUTHORED
+                    + i * settings.HIGHSCORE_ROW_PITCH_AUTHORED
+                )
+                screen.blit(rank_img, rank_img.get_rect(midleft=(rank_x, row_y)))
+                screen.blit(time_img, time_img.get_rect(midleft=(time_x, row_y)))
+                screen.blit(result_img, result_img.get_rect(midright=(result_x, row_y)))
                 if highlighted:
                     new_img = self.assets.font.render("NEW", True, settings.SCORE_COLOR)
-                    screen.blit(new_img, new_img.get_rect(midright=(560, row_y)))
+                    screen.blit(new_img, new_img.get_rect(midright=(new_x, row_y)))
 
         _draw_button(screen, self.back_img, self.back_rect, mouse_pos)
         _track_hover(self, mouse_pos)

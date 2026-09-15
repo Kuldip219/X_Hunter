@@ -325,31 +325,45 @@ def test_entry_recorded_before_restart_resets(game):
 
 
 def test_menu_banner_images_load_and_preserve_aspect_ratio(game):
-    sw, sh = game.assets.score_img.get_size()
-    assert sw <= settings.SCORE_IMG_SIZE[0] and sh <= settings.SCORE_IMG_SIZE[1]
-    assert abs(sw / sh - 1489 / 382) < 0.03
+    """Banners fit WITHIN their footprint, preserving the source aspect ratio
+    (never stretched). Checked against the exact aspect-fit result the loader
+    computes rather than a fixed tolerance: an integer-truncated dimension
+    can sit up to 1px under the ideal, which is ~1.3% on a 75px tall button."""
+    for img, footprint, src in (
+        (game.assets.score_img, settings.SCORE_IMG_SIZE, (1489, 382)),
+        (game.assets.back_img, settings.BACK_IMG_SIZE, (1491, 354)),
+    ):
+        w, h = img.get_size()
+        assert w <= footprint[0] and h <= footprint[1]
+        scale = min(footprint[0] / src[0], footprint[1] / src[1])
+        assert abs(w - src[0] * scale) < 1.01
+        assert abs(h - src[1] * scale) < 1.01
 
-    bw, bh = game.assets.back_img.get_size()
-    assert bw <= settings.BACK_IMG_SIZE[0] and bh <= settings.BACK_IMG_SIZE[1]
-    assert abs(bw / bh - 1491 / 354) < 0.03
+
+def _near(actual, authored, tol=2):
+    """True when *actual* matches the authored-canvas size passed through
+    settings.px(). The loader's aspect-fit integer division can differ from
+    px()'s rounding by a pixel or two, hence the tolerance."""
+    return all(abs(a - settings.px(b)) <= tol for a, b in zip(actual, authored))
 
 
 def test_menu_banner_sizes_pinned(game):
-    """Pin the exact rendered pixel size of every menu banner button so
-    changes to footprints or source images cause a loud test failure
-    instead of silently drifting."""
-    assert game.assets.score_img.get_size() == (249, 64)
-    assert game.assets.back_img.get_size() == (250, 59)
-    assert game.assets.controls_img.get_size() == (250, 58)
-    assert game.assets.edit_img.get_size() == (250, 59)
+    """Pin the rendered pixel size of every menu banner button - expressed as
+    the authored canvas size scaled to the live window - so changes to
+    footprints or source images cause a loud test failure instead of
+    silently drifting."""
+    assert _near(game.assets.score_img.get_size(), (249, 64))
+    assert _near(game.assets.back_img.get_size(), (250, 59))
+    assert _near(game.assets.controls_img.get_size(), (250, 58))
+    assert _near(game.assets.edit_img.get_size(), (250, 59))
 
 
 def test_menu_banner_visible_content_pinned(game):
     """Pin the *visible* (trimmed) content size of the shared-loading buttons
     too, so edits to _load_menu_banner can't silently resize them."""
-    assert game.assets.score_img.get_bounding_rect(1).size == (240, 51)
-    assert game.assets.back_img.get_bounding_rect(1).size == (241, 48)
-    assert game.assets.controls_img.get_bounding_rect(1).size == (244, 50)
+    assert _near(game.assets.score_img.get_bounding_rect(1).size, (240, 51))
+    assert _near(game.assets.back_img.get_bounding_rect(1).size, (241, 48))
+    assert _near(game.assets.controls_img.get_bounding_rect(1).size, (244, 50))
 
 
 def test_menu_banner_falls_back_when_file_missing(monkeypatch, game):

@@ -21,7 +21,9 @@ def test_player_hitbox_matches_sprite_constants():
     assert (w, h) == settings.PLAYER_IMG_SIZE
     assert settings.PLAYER_WIDTH == settings.PLAYER_IMG_SIZE[0]
     assert settings.PLAYER_HEIGHT == settings.PLAYER_IMG_SIZE[1]
-    assert (w, h) == (65, 80)
+    # Authored 65x80, scaled to the live window by settings.px().
+    assert settings.PLAYER_WIDTH == settings.px(65)
+    assert settings.PLAYER_HEIGHT == settings.px(80)
 
 
 def test_enemy_hitbox_matches_sprite_constants():
@@ -30,14 +32,16 @@ def test_enemy_hitbox_matches_sprite_constants():
     assert (w, h) == settings.ENEMY_IMG_SIZE
     assert settings.ENEMY_WIDTH == settings.ENEMY_IMG_SIZE[0]
     assert settings.ENEMY_HEIGHT == settings.ENEMY_IMG_SIZE[1]
-    assert (w, h) == (50, 50)
+    # Authored 50x50, scaled to the live window by settings.px().
+    assert settings.ENEMY_IMG_SIZE == (settings.px(50), settings.px(50))
 
 
 def test_bullet_hitbox_is_rect_matching_sprite():
     b = Bullet(0, 0)
     assert isinstance(b.get_rect(), pygame.Rect)
     assert b.get_rect().size == settings.BULLET_IMG_SIZE
-    assert b.get_rect().size == (10, 20)
+    # Authored 10x20, scaled to the live window by settings.px().
+    assert settings.BULLET_IMG_SIZE == (settings.px(10), settings.px(20))
 
 
 def test_rects_share_sprite_origin():

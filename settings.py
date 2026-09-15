@@ -9,15 +9,59 @@ pygame usage is reading key constants for the default key bindings.
 import pygame
 
 # --- Screen --- #
-WIDTH: int = 600
-HEIGHT: int = 800
+# The game is AUTHORED against a 600x800 canvas. Every spatial value below
+# (positions, sprite footprints, gaps, px/second speeds) is written in those
+# authored pixels and passed through px(), and every layout anchor is a
+# fraction of the live WIDTH/HEIGHT, so the whole game is one uniform zoom.
+#
+# Resizing the window is therefore a ONE-NUMBER change: edit SCALE and
+# everything - menus, HUD, spawn bounds, sprite scale, parallax tiles -
+# follows. Nothing else in the codebase holds a raw screen coordinate, so a
+# new size can never leave a screen half-tuned.
+BASE_WIDTH: int = 600
+BASE_HEIGHT: int = 800
+# 1.28 (+28%): 600x800 -> 768x1024, both clean power-of-two-friendly
+# numbers, and the 3:4 aspect ratio is preserved exactly (no gameplay or
+# composition change, just bigger).
+SCALE: float = 1.28
+
+
+# NOTE: px() is only defined for the authored canvas. It is equivalent to
+# w_frac(v / BASE_WIDTH) (and to h_frac(v / BASE_HEIGHT) while the aspect
+# ratio is preserved), so a constant written as px(300) is literally "300 of
+# the original 600 wide screen" = half the width.
+def px(value: float) -> int:
+    """Scale an authored 600x800-canvas pixel value to the live resolution."""
+    return int(round(value * SCALE))
+
+
+WIDTH: int = px(BASE_WIDTH)
+HEIGHT: int = px(BASE_HEIGHT)
+
+
+# --- Proportional layout helpers --- #
+# For screen-relative anchors, express the position as a fraction of the
+# live screen instead of an authored pixel value: h_frac(3 / 8) is "3/8 of
+# the way down the screen", which stays correct at any WIDTH/HEIGHT.
+def w_frac(fraction: float) -> int:
+    """A horizontal coordinate/size as a fraction of the screen width."""
+    return int(round(fraction * WIDTH))
+
+
+def h_frac(fraction: float) -> int:
+    """A vertical coordinate/size as a fraction of the screen height."""
+    return int(round(fraction * HEIGHT))
+
+
 FPS: int = 60
 CAPTION: str = "X Hunter"
 
 # --- Fonts --- #
+# Font sizes are pixel quantities on the authored canvas, so they scale with
+# the window (otherwise text would shrink relative to the screen).
 FONT_PATH: str = "Fonts/pixeltype.ttf"
-FONT_SIZE_SMALL: int = 36
-FONT_SIZE_LARGE: int = 72
+FONT_SIZE_SMALL: int = px(36)
+FONT_SIZE_LARGE: int = px(72)
 
 # --- Delta time --- #
 # Movement and gameplay timers are expressed in real time (seconds) and
@@ -42,12 +86,17 @@ FIXED_DT: float = 1.0 / 60.0
 # Collision rect dimensions. These must match PLAYER_IMG_SIZE so the hitbox
 # coincides exactly with the rendered sprite (both drawn from the top-left
 # corner (x, y)).
-PLAYER_WIDTH: int = 65
-PLAYER_HEIGHT: int = 80
-# 5 px/frame at 60 FPS = 300 px/s (feel unchanged at the target frame rate).
-PLAYER_SPEED_PER_SEC: int = 300
+PLAYER_WIDTH: int = px(65)
+PLAYER_HEIGHT: int = px(80)
+# Authored as 5 px/frame at 60 FPS = 300 px/s; scaling it keeps the ship
+# crossing the (proportionally wider) screen in the same number of seconds.
+PLAYER_SPEED_PER_SEC: int = px(300)
 PLAYER_START_HEALTH: int = 5
-PLAYER_IMG_SIZE: tuple[int, int] = (65, 80)
+PLAYER_IMG_SIZE: tuple[int, int] = (PLAYER_WIDTH, PLAYER_HEIGHT)
+# Spawn row: this far above the bottom edge. A named constant (rather than
+# the raw "HEIGHT - 80" the call sites used) so it scales with the window.
+PLAYER_START_MARGIN_Y: int = px(80)
+PLAYER_START_Y: int = HEIGHT - PLAYER_START_MARGIN_Y
 
 # Fire cooldown between shots while Space is held: 0.2 s = 12 frames at
 # 60 FPS = 5 shots/s - classic arcade cadence, not a machine gun.
@@ -62,19 +111,19 @@ PLAYER_BLINK_INTERVAL_SECONDS: float = 0.1
 
 # --- Bullet --- #
 # 10 px/frame at 60 FPS = 600 px/s.
-BULLET_SPEED_PER_SEC: int = 600
-BULLET_IMG_SIZE: tuple[int, int] = (10, 20)
-BULLET_OFFSCREEN_Y: int = -20
+BULLET_SPEED_PER_SEC: int = px(600)
+BULLET_IMG_SIZE: tuple[int, int] = (px(10), px(20))
+BULLET_OFFSCREEN_Y: int = px(-20)
 
 # --- Enemy --- #
 # Collision rect dimensions. These must match ENEMY_IMG_SIZE so the hitbox
 # coincides exactly with the rendered sprite (both drawn from the top-left
 # corner (x, y)).
-ENEMY_WIDTH: int = 50
-ENEMY_HEIGHT: int = 50
-# 5 px/frame at 60 FPS = 300 px/s.
-ENEMY_SPEED_PER_SEC: int = 300
-ENEMY_IMG_SIZE: tuple[int, int] = (50, 50)
+ENEMY_WIDTH: int = px(50)
+ENEMY_HEIGHT: int = px(50)
+# Authored as 5 px/frame at 60 FPS = 300 px/s.
+ENEMY_SPEED_PER_SEC: int = px(300)
+ENEMY_IMG_SIZE: tuple[int, int] = (ENEMY_WIDTH, ENEMY_HEIGHT)
 
 # --- Difficulty ramp --- #
 # Difficulty is a single value in [0, DIFFICULTY_MAX] blended from two
@@ -95,8 +144,8 @@ DIFFICULTY_MAX: float = 1.0
 #   min(ENEMY_SPEED_PER_SEC + ENEMY_SPEED_GAIN_PER_SEC*difficulty, ENEMY_MAX_SPEED_PER_SEC)
 # At max difficulty: 300 + 240 = 540 px/s (9 px/frame at 60 FPS) - faster
 # but still reactable.
-ENEMY_SPEED_GAIN_PER_SEC: int = 240
-ENEMY_MAX_SPEED_PER_SEC: int = 540
+ENEMY_SPEED_GAIN_PER_SEC: int = px(240)
+ENEMY_MAX_SPEED_PER_SEC: int = px(540)
 
 # Active enemy count scales as: min(INITIAL_ENEMY_COUNT + ENEMY_COUNT_GAIN*difficulty, ENEMY_MAX_COUNT)
 # At max difficulty the field doubles from 5 to 10 enemies.
@@ -107,11 +156,11 @@ ENEMY_MAX_COUNT: int = 10
 # Since the enemy hitbox was resized to match the sprite (ENEMY_WIDTH 40 -> 50),
 # respawn() now uses the same 50px margin, so the two spawn paths line up.
 INITIAL_ENEMY_COUNT: int = 5
-INITIAL_ENEMY_X_MARGIN: int = 50
-INITIAL_ENEMY_MIN_Y: int = -600
+INITIAL_ENEMY_X_MARGIN: int = px(50)  # == ENEMY_WIDTH, kept in sync by design
+INITIAL_ENEMY_MIN_Y: int = px(-600)
 INITIAL_ENEMY_MAX_Y: int = 0
 
-RESPAWN_ENEMY_MIN_Y: int = -200
+RESPAWN_ENEMY_MIN_Y: int = px(-200)
 RESPAWN_ENEMY_MAX_Y: int = 0
 
 # --- Gunner enemy (Level 2 exclusive) ---
@@ -119,21 +168,21 @@ RESPAWN_ENEMY_MAX_Y: int = 0
 # height, then drifts side-to-side and fires straight down on a cooldown.
 # Exposed as named constants so we can tune the feel after seeing it live.
 GUNNER_MAX_DESCENT_FRACTION: float = 0.55  # never past 55% of screen height
-GUNNER_DRIFT_SPEED_PER_SEC: int = 150  # side-to-side px/s once stopped
+GUNNER_DRIFT_SPEED_PER_SEC: int = px(150)  # side-to-side px/s once stopped
 GUNNER_FIRE_COOLDOWN_SECONDS: float = 2.0  # seconds between shots after stopping
-GUNNER_DESCEND_SPEED_PER_SEC: int = 120  # px/s while descending to stop-Y
+GUNNER_DESCEND_SPEED_PER_SEC: int = px(120)  # px/s while descending to stop-Y
 
 # --- Enemy bullets ---
 # Fired straight down by gunner enemies. Visually recolored from the
 # player bullet sprite (red tint) at load time in assets.py.
-ENEMY_BULLET_SPEED_PER_SEC: int = 400  # px/s downward
-ENEMY_BULLET_IMG_SIZE: tuple[int, int] = (10, 16)
-ENEMY_BULLET_OFFSCREEN_Y: int = 820  # below screen bottom
+ENEMY_BULLET_SPEED_PER_SEC: int = px(400)  # px/s downward
+ENEMY_BULLET_IMG_SIZE: tuple[int, int] = (px(10), px(16))
+ENEMY_BULLET_OFFSCREEN_Y: int = HEIGHT + px(20)  # below screen bottom
 # Angled (boss spread) bullets also despawn once this far past a side edge.
-ENEMY_BULLET_OFFSCREEN_X_MARGIN: int = 60
+ENEMY_BULLET_OFFSCREEN_X_MARGIN: int = px(60)
 
 # --- Explosions ---
-EXPLOSION_IMG_SIZE: tuple[int, int] = (70, 70)
+EXPLOSION_IMG_SIZE: tuple[int, int] = (px(70), px(70))
 EXPLOSION_FRAME_COUNT: int = 8
 ENEMY_EXPLOSION_FRAME_DELAY: int = 3
 PLAYER_EXPLOSION_FRAME_DELAY: int = 5
@@ -157,8 +206,8 @@ SETTINGS_FILE: str = "settings.json"
 # Horizontal volume sliders: track size (width x height) and the grab handle
 # footprint. The handle travels along the track; value = handle position /
 # track width, clamped to [0, 1].
-SLIDER_TRACK_SIZE: tuple[int, int] = (220, 12)
-SLIDER_HANDLE_SIZE: tuple[int, int] = (18, 26)
+SLIDER_TRACK_SIZE: tuple[int, int] = (px(220), px(12))
+SLIDER_HANDLE_SIZE: tuple[int, int] = (px(18), px(26))
 
 # Vertical spacing system for the Options screen: related rows sit
 # OPTIONS_ITEM_GAP apart (edge to edge) and unrelated sections sit
@@ -167,13 +216,13 @@ SLIDER_HANDLE_SIZE: tuple[int, int] = (18, 26)
 # computed top-down in OptionsScreen from measured text heights using these
 # constants - no magic numbers - so adding an element can't silently break
 # the layout again.
-OPTIONS_TITLE_Y: int = 100
-OPTIONS_SECTION_GAP: int = 50
-OPTIONS_ITEM_GAP: int = 24
+OPTIONS_TITLE_Y: int = h_frac(1 / 8)
+OPTIONS_SECTION_GAP: int = px(50)
+OPTIONS_ITEM_GAP: int = px(24)
 # Menu banner images scale to fit WITHIN their footprints, preserving
 # aspect ratio (never stretched/distorted). controls.png is the CONTROLS
 # button on the Options screen.
-CONTROLS_IMG_SIZE: tuple[int, int] = (250, 80)
+CONTROLS_IMG_SIZE: tuple[int, int] = (px(250), px(80))
 
 # --- Controls screen --- #
 # The keybind reference got its own full screen, so it can breathe: one
@@ -182,12 +231,20 @@ CONTROLS_IMG_SIZE: tuple[int, int] = (250, 80)
 # CONTROLS_ACTION_X and its key midright at CONTROLS_KEY_X. In edit mode
 # (activated by the edit.png button) every keyboard row is clickable and
 # can be rebound; the EDIT button sits at CONTROLS_EDIT_Y.
-CONTROLS_TITLE_Y: int = 120
-CONTROLS_ROWS_TOP: int = 220
-CONTROLS_ROW_GAP: int = 55
-CONTROLS_ACTION_X: int = 120
-CONTROLS_KEY_X: int = 470
-CONTROLS_EDIT_Y: int = 635
+# The row stack keeps its AUTHORED geometry as well as the scaled values:
+# each row's y is computed as px(top + i * gap), i.e. from its own total
+# authored offset, rather than by accumulating an already-rounded gap.
+# Accumulating px(55) (70) instead of 55*1.28 (70.4) loses 0.4px per row -
+# ~2px by the eighth row - which showed up as the largest drift in the
+# old-vs-new layout comparison. This way a repeated stack stays exact.
+CONTROLS_ROWS_TOP_AUTHORED: int = 220
+CONTROLS_ROW_GAP_AUTHORED: int = 55
+CONTROLS_TITLE_Y: int = h_frac(3 / 20)
+CONTROLS_ROWS_TOP: int = px(CONTROLS_ROWS_TOP_AUTHORED)
+CONTROLS_ROW_GAP: int = px(CONTROLS_ROW_GAP_AUTHORED)
+CONTROLS_ACTION_X: int = w_frac(1 / 5)
+CONTROLS_KEY_X: int = w_frac(47 / 60)
+CONTROLS_EDIT_Y: int = h_frac(127 / 160)
 
 # --- Default key bindings --- #
 # Action id -> default pygame key. This is the source of truth for input:
@@ -262,16 +319,16 @@ POWERUP_TYPES: tuple[str, str, str] = (
 # POWERUP_FALL_SPEED_PER_SEC and despawn after POWERUP_LIFETIME_SECONDS
 # (both real time, ticked by dt) if the player never touches them.
 POWERUP_DROP_CHANCE: float = 0.12
-POWERUP_FALL_SPEED_PER_SEC: int = 250
+POWERUP_FALL_SPEED_PER_SEC: int = px(250)
 POWERUP_LIFETIME_SECONDS: float = 8.0
 # Uniform drop icons scaled to this footprint (kept centered on the drop
 # point, matching how the enemy sprite was centered on its hitbox).
-POWERUP_IMG_SIZE: tuple[int, int] = (40, 40)
+POWERUP_IMG_SIZE: tuple[int, int] = (px(40), px(40))
 # Visible content size after cropping transparent padding. Each icon is
 # cropped to its non-transparent bounding rect then scaled to this size
 # and centered on a POWERUP_IMG_SIZE surface, so all three appear the
 # same visual size regardless of how much padding their source art has.
-POWERUP_VISIBLE_SIZE: tuple[int, int] = (28, 28)
+POWERUP_VISIBLE_SIZE: tuple[int, int] = (px(28), px(28))
 POWERUP_IMG_FILES: dict[str, str] = {
     POWERUP_KIND_SHIELD: "sheild.png",
     POWERUP_KIND_RAPID_FIRE: "bolt.png",
@@ -308,17 +365,19 @@ RAPID_FIRE_COOLDOWN_MULTIPLIER: float = 0.3
 # Power-up HUD + shield aura colors (cyan shield bubble, yellow rapid).
 SHIELD_AURA_COLOR: tuple[int, int, int] = (0, 220, 255)
 RAPID_FIRE_COLOR: tuple[int, int, int] = (255, 220, 0)
-POWERUP_STATUS_X: int = 10
-POWERUP_STATUS_Y: int = 95
-POWERUP_STATUS_ROW_GAP: int = 30
+POWERUP_STATUS_X: int = px(10)
+POWERUP_STATUS_Y: int = px(95)
+POWERUP_STATUS_ROW_GAP: int = px(30)
 
 # Top-left corner of the player's health bar. Named (rather than left as the
 # draw call's default) so layout rules - e.g. "the boss bar must not overlap
 # the player's HUD" - can be asserted against one source of truth.
-PLAYER_HEALTH_POS: tuple[int, int] = (10, 10)
+PLAYER_HEALTH_POS: tuple[int, int] = (px(10), px(10))
+# Health bar sprite footprint (health_0..5.png), scaled to match the HUD.
+HEALTH_IMG_SIZE: tuple[int, int] = (px(200), px(70))
 
 # --- Effects ---
-SHAKE_STRENGTH: int = 8
+SHAKE_STRENGTH: int = px(8)
 SHAKE_DURATION_ON_HIT: int = 40
 DAMAGE_FLASH_DURATION: int = 25
 DAMAGE_FLASH_ALPHA: int = 80
@@ -327,15 +386,17 @@ DAMAGE_FLASH_ALPHA: int = 80
 FADE_SPEED: int = 15
 
 # --- Menu image sizes ---
-TITLE_IMG_SIZE: tuple[int, int] = (350, 120)
-PLAY_IMG_SIZE: tuple[int, int] = (250, 80)
-OPTIONS_IMG_SIZE: tuple[int, int] = (250, 80)
-EXIT_IMG_SIZE: tuple[int, int] = (250, 80)
-PAUSE_IMG_SIZE: tuple[int, int] = (400, 100)
-CONTINUE_IMG_SIZE: tuple[int, int] = (250, 80)
-QUIT_IMG_SIZE: tuple[int, int] = (250, 72)
-RESTART_IMG_SIZE: tuple[int, int] = (250, 80)
-QUIT_GAMEOVER_IMG_SIZE: tuple[int, int] = (250, 80)
+# Authored footprints; the images themselves are scaled to fit within these
+# (aspect preserved), so the menus stay proportional to the window.
+TITLE_IMG_SIZE: tuple[int, int] = (px(350), px(120))
+PLAY_IMG_SIZE: tuple[int, int] = (px(250), px(80))
+OPTIONS_IMG_SIZE: tuple[int, int] = (px(250), px(80))
+EXIT_IMG_SIZE: tuple[int, int] = (px(250), px(80))
+PAUSE_IMG_SIZE: tuple[int, int] = (px(400), px(100))
+CONTINUE_IMG_SIZE: tuple[int, int] = (px(250), px(80))
+QUIT_IMG_SIZE: tuple[int, int] = (px(250), px(72))
+RESTART_IMG_SIZE: tuple[int, int] = (px(250), px(80))
+QUIT_GAMEOVER_IMG_SIZE: tuple[int, int] = (px(250), px(80))
 
 # --- Colors ---
 BLACK: tuple[int, int, int] = (0, 0, 0)
@@ -357,18 +418,25 @@ PAUSE_OVERLAY_ALPHA: int = 180
 HIGHSCORE_MAX: int = 10
 HIGHSCORE_FILE: str = "highscores.json"
 
+# Leaderboard row geometry (authored + scaled, same reasoning as the controls
+# rows: ten rows positioned from their own authored offset never drift).
+HIGHSCORE_ROWS_TOP_AUTHORED: int = 200
+HIGHSCORE_ROW_PITCH_AUTHORED: int = 42
+HIGHSCORE_ROWS_TOP: int = px(HIGHSCORE_ROWS_TOP_AUTHORED)
+HIGHSCORE_ROW_PITCH: int = px(HIGHSCORE_ROW_PITCH_AUTHORED)
+
 # Menu banner images (score.png / back.png) scale to fit WITHIN these
 # footprints, preserving their aspect ratio so they never distort: score.png
 # is the High Scores button on the Options screen, back.png the Back button
 # on the high-scores screen.
-SCORE_IMG_SIZE: tuple[int, int] = (250, 80)
-BACK_IMG_SIZE: tuple[int, int] = (250, 80)
+SCORE_IMG_SIZE: tuple[int, int] = (px(250), px(80))
+BACK_IMG_SIZE: tuple[int, int] = (px(250), px(80))
 # The EDIT button on the Controls screen (edit.png).
 # edit.png has much more transparent padding than back.png, so it is trimmed
 # to its visible content and scaled to match back_img's visible content width
 # in assets.py; the rendered surface keeps back_img's canvas size (250x59) so
 # layout is unaffected. This constant is documented here for reference only.
-EDIT_IMG_SIZE: tuple[int, int] = (250, 59)
+EDIT_IMG_SIZE: tuple[int, int] = (px(250), px(59))
 
 # --- Levels ---
 # The game is split into discrete levels. Each level has a score target
@@ -402,11 +470,11 @@ BOSS_LEVEL_INDEX: int = 2
 # screen appears. Speed is in px/second (dt-based, consistent with the rest
 # of the movement system). At 600 px/s the 800px screen takes ~1.3s to
 # traverse — fast enough to feel decisive, slow enough to be readable.
-SHIP_EXIT_SPEED_PER_SEC: int = 600
+SHIP_EXIT_SPEED_PER_SEC: int = px(600)
 
 # Fade text: displayed centered on screen, fades in, holds, fades out.
 # Used for "Phase 1", "Level Finished", "Phase 2".
-FADE_TEXT_FONT_SIZE: int = 72
+FADE_TEXT_FONT_SIZE: int = px(72)
 FADE_TEXT_HOLD_SECONDS: float = 1.5  # how long the text stays fully visible
 FADE_TEXT_SPEED: int = 5  # alpha change per frame (255 / ~51 frames ≈ 0.85s fade in/out)
 # Delay before fade text begins its alpha animation (frames). Gives the
@@ -422,21 +490,23 @@ FADE_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 
 # --- Parallax backgrounds ---
 # Two-layer vertical-scroll parallax per level, plus a static UI backdrop.
-# Each layer image is exactly one screen tall (WIDTH x HEIGHT) and tiles
-# seamlessly top-to-bottom. Two copies are drawn stacked; the scroll offset
-# wraps when a copy fully exits the bottom so the loop is invisible.
+# Each layer image is authored one screen tall (BASE_WIDTH x BASE_HEIGHT)
+# and is rescaled to (WIDTH, HEIGHT) at load time, so it still tiles
+# seamlessly top-to-bottom at any window size. Two copies are drawn stacked;
+# the scroll offset wraps when a copy fully exits the bottom so the loop is
+# invisible.
 # Speeds are in px/second (dt-based). The far layer scrolls slowly (dim,
 # sparse stars), the near layer scrolls faster (brighter, more detail).
-BG_L1_FAR_SPEED: int = 40   # px/s — dim, faint nebula
-BG_L1_NEAR_SPEED: int = 120  # px/s — brighter stars, wisps
-BG_L2_FAR_SPEED: int = 45   # px/s — slightly faster, deeper space
-BG_L2_NEAR_SPEED: int = 130  # px/s — magenta wisps, debris
+BG_L1_FAR_SPEED: int = px(40)   # px/s — dim, faint nebula
+BG_L1_NEAR_SPEED: int = px(120)  # px/s — brighter stars, wisps
+BG_L2_FAR_SPEED: int = px(45)   # px/s — slightly faster, deeper space
+BG_L2_NEAR_SPEED: int = px(130)  # px/s — magenta wisps, debris
 # Level 3 reuses the Level 2 artwork (deep space reads as the same world as
 # the "final phase") but scrolls a touch faster: the run is at its most
 # intense here. Per-layer speeds live in BG_LAYER_SPEEDS so background.py
 # never has to special-case level indices.
-BG_L3_FAR_SPEED: int = 60
-BG_L3_NEAR_SPEED: int = 150
+BG_L3_FAR_SPEED: int = px(60)
+BG_L3_NEAR_SPEED: int = px(150)
 BG_LAYER_SPEEDS: list[tuple[int, int]] = [
     (BG_L1_FAR_SPEED, BG_L1_NEAR_SPEED),
     (BG_L2_FAR_SPEED, BG_L2_NEAR_SPEED),
@@ -464,29 +534,29 @@ BOSS_HP: int = 40
 # Visibly bigger than a 50x50 enemy ship (4x in each dimension) while still
 # leaving room to dodge underneath: 200x222 preserves the source 700x778
 # aspect ratio (~0.9).
-BOSS_IMG_SIZE: tuple[int, int] = (200, 222)
+BOSS_IMG_SIZE: tuple[int, int] = (px(200), px(222))
 # The bar sits in the top-RIGHT corner, clear of the player's health bar
 # (which owns the top-left, 200x70 at PLAYER_HEALTH_POS). A full-width
 # top-middle bar collided with it: 400 px centred on a 600 px screen starts
 # at x=100, inside the player bar's 10..210 footprint, so the two bars drew
 # over each other and neither was readable. 340x56 keeps the source aspect
 # (~6.06) and clears the player bar by 40 px.
-BOSS_HEALTH_BAR_SIZE: tuple[int, int] = (340, 56)
-BOSS_HEALTH_BAR_Y: int = 16
-BOSS_HEALTH_BAR_MARGIN_X: int = 20  # gap to the right screen edge
+BOSS_HEALTH_BAR_SIZE: tuple[int, int] = (px(340), px(56))
+BOSS_HEALTH_BAR_Y: int = px(16)
+BOSS_HEALTH_BAR_MARGIN_X: int = px(20)  # gap to the right screen edge
 
 # Entrance: the boss drops in from above the screen down to BOSS_ACTIVE_Y
 # (inside the top band of the screen, above the player's reach) at a
 # readable speed. It is invulnerable while entering.
-BOSS_ENTRY_SPEED_PER_SEC: int = 160
-BOSS_ACTIVE_Y: int = 130
+BOSS_ENTRY_SPEED_PER_SEC: int = px(160)
+BOSS_ACTIVE_Y: int = h_frac(13 / 80)
 
 # Movement: continuous drift across a bounded horizontal band (never
 # touching the screen edges) plus a gentle vertical bob - deliberately NOT
 # the gunner's stop-and-shoot pattern.
-BOSS_DRIFT_SPEED_PER_SEC: int = 90
-BOSS_DRIFT_MARGIN: int = 40  # keeps the sprite this far from either edge
-BOSS_BOB_AMPLITUDE: int = 16  # px up/down around BOSS_ACTIVE_Y
+BOSS_DRIFT_SPEED_PER_SEC: int = px(90)
+BOSS_DRIFT_MARGIN: int = px(40)  # keeps the sprite this far from either edge
+BOSS_BOB_AMPLITUDE: int = px(16)  # px up/down around BOSS_ACTIVE_Y
 BOSS_BOB_PERIOD_SECONDS: float = 2.6  # one full up/down cycle
 
 # Phases by HP fraction (40 HP):
@@ -520,7 +590,7 @@ BOSS_AIM_BURST_INTERVAL_SECONDS: float = 0.12
 BOSS_AIM_MAX_ANGLE_DEGREES: float = 60.0
 # Target row used when a caller doesn't supply the player's y (unit tests
 # driving the boss on its own). HEIGHT - 40 is the player's spawn row.
-BOSS_AIM_DEFAULT_TARGET_Y: int = HEIGHT - 40
+BOSS_AIM_DEFAULT_TARGET_Y: int = HEIGHT - px(40)
 # Minion spawns (phase 3 only): one gunner-type enemy every interval. They
 # are fight texture - they award no score and do not feed any gate.
 # 3 s keeps phase 3 visibly busier than the old 5 s while leaving a gunner
@@ -555,4 +625,4 @@ BOSS_VICTORY_TEXT: str = "THE FINAL PHASE CLEARED"
 BOSS_VICTORY_COLOR: tuple[int, int, int] = (255, 215, 0)
 
 # --- Button hover offset (buttons nudge down 5px on hover) ---
-BUTTON_HOVER_OFFSET: int = 5
+BUTTON_HOVER_OFFSET: int = px(5)
