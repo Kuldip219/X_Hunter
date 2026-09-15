@@ -167,8 +167,9 @@ def wait_for_boss_active(game, cap: int = 600) -> bool:
 
 
 def kill_boss(game, cap: int = 4000) -> bool:
-    """Defeat the boss through the REAL damage path (one bullet hit) and
-    play the whole victory sequence out to the end-of-run screen.
+    """Defeat the boss through the REAL damage path (one bullet hit) and play
+    the whole boss-death sequence (flash + staggered explosion chain) out to
+    the end-of-run screen.
 
     Returns whether "game_over" was reached within `cap` frames.
     """
@@ -181,7 +182,7 @@ def kill_boss(game, cap: int = 4000) -> bool:
     # Make the kill deterministic: clear any leftover wave enemies (they are
     # left to finish naturally in the real fight, but they would make this
     # helper's outcome depend on random spawn positions) and top the player
-    # back up so the long victory sequence can't be interrupted by a death.
+    # back up so the long death sequence can't be interrupted by a death.
     game.player.health = settings.PLAYER_START_HEALTH
     game.player.invulnerable_timer = 0.0
     game.enemies = []

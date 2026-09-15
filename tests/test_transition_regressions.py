@@ -51,8 +51,9 @@ def _finish_the_run(game):
 
     Levels 1-2 end through the normal ship-exit transition; the final level
     is the boss fight, which ends by defeating the boss through the real
-    damage path and playing the victory sequence out. Both paths land on the
-    same "game_over" state (framed as VICTORY when run_finished is set).
+    damage path and playing the boss-death sequence out. Both paths land on
+    the same "game_over" state (headed with the game-complete copy when
+    run_finished is set).
     """
     start_game(game)
     for _ in range(settings.LEVEL_COUNT - 1):

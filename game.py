@@ -136,9 +136,6 @@ class Game:
         self.boss_death_timer: float = 0.0
         self.boss_death_chain: list[tuple[float, float, float, float]] = []
         self.boss_death_duration: float = 0.0
-        # Flag set so the victory fade text's completion hands off to the
-        # end-of-run (game_over) state instead of a level transition.
-        self._victory_pending: bool = False
 
         # player, bullets, enemies, explosions, and score are all
         # initialized by reset_game() below.
@@ -201,7 +198,6 @@ class Game:
         self.boss_death_timer = 0.0
         self.boss_death_chain = []
         self.boss_death_duration = 0.0
-        self._victory_pending = False
         self.victory_flash.timer = 0
 
         # Level state: full reset goes to Level 0; checkpoint preserves
@@ -296,14 +292,7 @@ class Game:
             self._advance_transitions()
             self.fade.draw(self.screen)
             if self._fade_text_owns_screen():
-                # The victory screen uses its own gold styling so it reads as
-                # a distinctly bigger moment than a normal "Level Finished".
-                color = (
-                    settings.BOSS_VICTORY_COLOR
-                    if self.state == "victory"
-                    else None
-                )
-                self.fade_text.draw(self.screen, self.assets.big_font, color)
+                self.fade_text.draw(self.screen, self.assets.big_font)
 
             pygame.display.update()
 
@@ -390,7 +379,7 @@ class Game:
         elif self.state == "game":
             self._draw_game()
 
-        elif self.state in ("level_intro", "level_finished", "victory"):
+        elif self.state in ("level_intro", "level_finished"):
             # Black screen with only the fade text — no gameplay HUD,
             # entities, or background. The text itself is drawn later in
             # run() (after the fade transition), same as for other states.
@@ -406,10 +395,11 @@ class Game:
 
         elif self.state == "game_over":
             self.static_bg.draw(self.screen)
-            # A run that beat the final boss gets VICTORY rather than
-            # GAME OVER - same screen, same buttons, different framing.
+            # A run that beat the final boss gets the game-complete heading
+            # rather than GAME OVER - same screen, same buttons, same button
+            # positions, only the heading text and colour differ.
             title, color = (
-                ("VICTORY", settings.BOSS_VICTORY_COLOR)
+                (settings.GAME_COMPLETE_TITLE, settings.GAME_COMPLETE_COLOR)
                 if self.run_finished
                 else ("GAME OVER", settings.GAME_OVER_COLOR)
             )
@@ -453,7 +443,7 @@ class Game:
         """
         return (
             self.fade_text.active
-            and self.state in ("game", "level_intro", "level_finished", "victory")
+            and self.state in ("game", "level_intro", "level_finished")
             and not self.fade.fading_out
         )
 
@@ -490,29 +480,22 @@ class Game:
             "controls",
             "level_intro",
             "level_finished",
-            "victory",
         ):
             self.audio.stop_music()
 
     def _on_fade_text_done(self) -> None:
         """Called when a fade text overlay finishes. Handles level intro
-        completion (resume gameplay), the boss victory screen (end the run),
-        and the level finished transition (advance to next level or end run).
+        completion (resume gameplay) and the level finished transition
+        (advance to next level or end the run).
+
+        The boss's victory no longer goes through here: it has no fade text,
+        and hands straight from the explosion chain to the end-of-run screen
+        (see _update_boss_death).
         """
         if self._level_intro_pending:
             # Intro text finished — transition from level_intro to gameplay.
             self._level_intro_pending = False
             self.fade.start("game")
-        elif self._victory_pending:
-            # Boss victory screen finished — the run is over and COMPLETE.
-            # Same end-state as a fully-cleared run (game_over, framed as
-            # VICTORY by the run_finished flag) so RESTART/QUIT work exactly
-            # as they already do after the last level.
-            self._victory_pending = False
-            self.fade.start("game_over")
-            self.last_run_rank = self.high_scores.add(
-                self.run_timer, result="Finished"
-            )
         elif self._level_transition_pending:
             # Level finished text finished — advance to next level.
             self._level_transition_pending = False
@@ -576,7 +559,7 @@ class Game:
 
         The boss level: the same score target is the BOSS GATE. Reaching it
         stops normal spawning and flies the boss in instead; there is no
-        ship exit and no "Level Finished" screen (the boss's own victory
+        ship exit and no "Level Finished" screen (the boss's own death
         sequence ends the run).
         """
         if self._level_transition_pending or self._level_intro_pending or self._ship_exit_active:
@@ -636,8 +619,8 @@ class Game:
         """
         self.boss_dying = True
         self.boss_death_timer = 0.0
-        # The run is WON the instant the boss hits 0 HP - not when the victory
-        # screen finishes. Setting it here means a player killed in the same
+        # The run is WON the instant the boss hits 0 HP - not when the
+        # end-of-run screen appears. Setting it here means a player killed in the same
         # step (or during the chain) can't turn a win into a death: the
         # dead-player path below is gated on this flag, and RESTART already
         # treats a finished run as "start fresh from Level 1".
@@ -670,7 +653,7 @@ class Game:
         self.boss_death_duration = last_time + settings.BOSS_DEATH_HOLD_SECONDS
 
     def _update_boss_death(self, dt: float) -> None:
-        """Tick the death chain; hand off to the victory screen when done."""
+        """Tick the death chain; hand off to the end-of-run screen when done."""
         self.boss_death_timer += dt
         while self.boss_death_chain and self.boss_death_chain[0][0] <= self.boss_death_timer:
             _t, x, y, scale = self.boss_death_chain.pop(0)
@@ -682,16 +665,22 @@ class Game:
         if self.boss_death_chain or self.boss_death_timer < self.boss_death_duration:
             return
 
-        # Chain finished: the boss is gone and the run is complete. The
-        # victory text is a dedicated screen (state "victory"), then the
-        # normal end-of-run game_over state takes over.
+        # Chain finished: the boss is gone and the run is complete. The flash
+        # plus the staggered chain IS the victory moment - there is no
+        # dedicated victory-text screen, so we hand straight off to the normal
+        # end-of-run screen (whose heading is the game-complete copy because
+        # run_finished is set), and RESTART/QUIT work exactly as they already
+        # do after the last level.
         self.boss_dying = False
         self.boss = None
         # run_finished was already set when the boss hit 0 HP - the run is won
         # from that instant, not from the end of the animation.
-        self._victory_pending = True
-        self.fade_text.reset(settings.BOSS_VICTORY_TEXT)
-        self.fade.start("victory")
+        self.fade.start("game_over")
+        # Record the completed run here: with the victory screen gone, this
+        # hand-off is the last thing the run does before the end-of-run screen
+        # (previously this happened when the victory text finished). Writing a
+        # tiny JSON file is effectively instant and failure-tolerant.
+        self.last_run_rank = self.high_scores.add(self.run_timer, result="Finished")
 
     def _draw_mute_indicator(self) -> None:
         """Small 'MUTED' label in the top-right corner while audio is off."""
@@ -836,7 +825,7 @@ class Game:
         # The boss's death sequence owns the run from the moment the boss hits
         # 0 HP: it has to finish, because the run is already WON and run_finished
         # is set. Handled before the dead-player freeze so a player killed in
-        # the same step can never strand the victory half-played.
+        # the same step can never strand the boss-death sequence half-played.
         if self.boss_dying:
             self._update_boss_death(dt)
             return
@@ -1233,7 +1222,7 @@ class Game:
                 self.explosions.remove(explosion)
 
         # A player explosion only owns the screen on a run that hasn't already
-        # been won: after the boss dies, run_finished is set and the victory
+        # been won: after the boss dies, run_finished is set and the boss-death
         # sequence must not be hijacked by the death fade.
         if self.player.dead and self.player.explosion and not self.run_finished:
             if not self.player.explosion.is_finished(len(self.assets.explosion_frames)):

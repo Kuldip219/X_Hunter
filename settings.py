@@ -618,11 +618,24 @@ BOSS_HIT_FLASH_ALPHA: int = 140
 BOSS_AIM_TINT_COLOR: tuple[int, int, int] = (255, 80, 80)
 BOSS_VICTORY_FLASH_COLOR: tuple[int, int, int] = (255, 255, 255)
 BOSS_VICTORY_FLASH_ALPHA: int = 150
-# Copy + colour for the dedicated victory screen. Deliberately distinct from
-# the "Level Finished" fade text: gold, and about the whole run, not a level.
-# ASCII only (the pixel font has no em-dash glyph).
-BOSS_VICTORY_TEXT: str = "THE FINAL PHASE CLEARED"
-BOSS_VICTORY_COLOR: tuple[int, int, int] = (255, 215, 0)
+# Heading + colour for the end-of-run screen once the WHOLE run is cleared
+# (the boss fight's victory).
+#
+# There is no dedicated victory-text screen any more: the boss's screen flash
+# and staggered explosion chain ARE the victory moment, and they hand straight
+# off to the normal restart/quit screen. This heading replaces the old
+# "VICTORY" title, and the gold stays distinct from the red "GAME OVER" a
+# death shows, so a completed run still reads as a win.
+#
+# Keep this copy SHORT. The heading is drawn at FONT_SIZE_LARGE on one line
+# with no wrapping, and the copy it replaced ("THE FINAL PHASE CLEARED")
+# rendered 779px wide on a 768px screen - longer than the screen itself, which
+# is what made the old victory screen look broken. menus.py now shrinks an
+# over-long heading to fit rather than letting it run off the edges.
+GAME_COMPLETE_TITLE: str = "Wanna go again....?"
+GAME_COMPLETE_COLOR: tuple[int, int, int] = (255, 215, 0)
+# Minimum clear space the end-of-run heading must leave on each side.
+GAME_TITLE_MARGIN_X: int = w_frac(1 / 40)
 
 # --- Button hover offset (buttons nudge down 5px on hover) ---
 BUTTON_HOVER_OFFSET: int = px(5)

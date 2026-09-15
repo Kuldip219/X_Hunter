@@ -33,6 +33,31 @@ def _draw_button(
         screen.blit(image, rect)
 
 
+def _render_fitted_title(
+    font: pygame.font.Font,
+    text: str,
+    max_width: int,
+    color: tuple[int, int, int],
+) -> pygame.Surface:
+    """Render a one-line heading, shrinking it uniformly if it would run past
+    `max_width`.
+
+    Headings are centred without wrapping, so a long string at the big font
+    runs off BOTH screen edges instead of failing loudly: the old victory copy
+    ("THE FINAL PHASE CLEARED") rendered 779px wide on a 768px screen. Every
+    real heading is far narrower than the screen, so this never scales
+    anything today - it just makes an over-long title degrade to "smaller"
+    rather than "clipped".
+    """
+    surface = font.render(text, True, color)
+    if surface.get_width() <= max_width:
+        return surface
+    scale = max_width / surface.get_width()
+    return pygame.transform.smoothscale(
+        surface, (max_width, max(1, int(surface.get_height() * scale)))
+    )
+
+
 def _track_hover(menu, mouse_pos: tuple[int, int]) -> None:
     """Play the hover SFX when the mouse moves onto a different button."""
     hovered = None
@@ -172,17 +197,23 @@ class GameOverMenu:
     ) -> None:
         """Draw the end-of-run screen.
 
-        `title`/`color` let the same screen frame a completed run as VICTORY
-        (see Game._draw_frame) - the buttons and layout are identical, so a
-        finished run and a death end up in exactly the same place.
+        `title`/`color` let the same screen frame a completed run differently
+        from a death (see Game._draw_frame: the completed run reads "Wanna go
+        again....?" in gold, a death reads "GAME OVER" in red) - the buttons
+        and layout are identical, so a finished run and a death end up in
+        exactly the same place, and only the heading text/colour changes.
         """
         if color is None:
             color = settings.GAME_OVER_COLOR
-        go_text = self.assets.big_font.render(title, True, color)
+        # Headings may not run past the screen edges (see _render_fitted_title).
+        max_title_w = settings.WIDTH - 2 * settings.GAME_TITLE_MARGIN_X
+        go_text = _render_fitted_title(self.assets.big_font, title, max_title_w, color)
         go_rect = go_text.get_rect(
             center=(settings.WIDTH // 2, settings.h_frac(1 / 4))
         )
-        go_shadow = self.assets.big_font.render("GAME OVER", True, settings.BLACK)
+        go_shadow = _render_fitted_title(
+            self.assets.big_font, "GAME OVER", max_title_w, settings.BLACK
+        )
 
         shadow = settings.px(5)
         screen.blit(go_shadow, (go_rect.x + shadow, go_rect.y + shadow))

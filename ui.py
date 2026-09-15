@@ -205,8 +205,9 @@ class FadeText:
     ) -> None:
         """Draw the text if visible (alpha > 0).
 
-        `color` overrides the default fade-text colour (the boss victory
-        screen uses its own gold so it reads as a distinct, bigger moment).
+        `color` overrides the default fade-text colour. Optional: every
+        current caller uses the default, but the parameter is kept because
+        coloured overlay text is a reasonable use of a reusable component.
         """
         if not self.active or self.alpha <= 0:
             return

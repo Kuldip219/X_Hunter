@@ -9,10 +9,12 @@ Covers the whole contract:
 - spread fan + telegraphed aimed burst (phases 2+), minions (phase 3 only),
 - boss bullets behave exactly like gunner bullets (shield blocks, i-frames),
 - no i-frame gap: every connecting bullet deals damage,
-- the victory sequence: flash, staggered chain, victory screen, end of run.
+- the victory sequence: flash, staggered chain, then straight to the
+  end-of-run screen (there is deliberately no dedicated victory screen).
 """
 
 import pytest
+import pygame
 
 import settings
 from boss import Boss
@@ -21,7 +23,15 @@ from enemy import Enemy
 from enemy_bullet import EnemyBullet
 from game import Game
 from gunner import GunnerEnemy
-from helpers import KeyState, kill_boss, reach_boss, start_game, wait_for_boss_active
+from helpers import (
+    KeyState,
+    kill_boss,
+    pump_fade,
+    reach_boss,
+    start_game,
+    wait_for_boss_active,
+)
+from menus import _render_fitted_title
 
 DT = settings.FIXED_DT
 
@@ -820,69 +830,41 @@ class TestVictorySequence:
         for gap in gaps:
             assert gap == pytest.approx(settings.BOSS_DEATH_EXPLOSION_INTERVAL_SECONDS, abs=DT * 2)
 
-    def test_sequence_ends_at_the_victory_screen_then_game_over(self, game):
+    def test_clear_flow_goes_straight_to_the_end_of_run_screen(self, game):
+        """No dedicated victory screen: the flash + staggered chain hand
+        straight off to the restart/quit screen."""
         start_game(game)
         _no_enemies(game)
         game.boss = _active_boss()
         game._begin_boss_death()
 
-        seen_victory = False
+        seen: list[str] = []
         for _ in range(int(20.0 / DT)):
             game._update_game(KeyState(), DT)
             game._advance_transitions()
-            if game.state == 'victory':
-                seen_victory = True
-                assert game.fade_text.text == settings.BOSS_VICTORY_TEXT
+            if not seen or seen[-1] != game.state:
+                seen.append(game.state)
             if game.state == 'game_over':
                 break
-        assert seen_victory, 'a dedicated victory screen must play'
-        assert game.state == 'game_over'
+
+        assert game.state == 'game_over', f'never reached the end of the run: {seen}'
+        assert 'victory' not in seen, f'a victory screen must not play, saw {seen}'
+        # The chain hands off with no text overlay at all (that overlay WAS the
+        # removed screen).
+        assert game.fade_text.active is False
         assert game.run_finished is True
         assert game.boss is None, 'the boss is gone once the chain finishes'
+        # The completed run is still recorded on the time leaderboard, even
+        # though the screen that used to write it is gone.
         entries = game.high_scores.entries
         assert entries and entries[0].result == 'Finished'
-
-    def test_victory_screen_is_blank_black(self, game):
-        start_game(game)
-        game.state = 'victory'
-        _draw_on_black(game)
-        game._draw_frame((0, 0))
-        for x in range(0, settings.WIDTH, 50):
-            for y in range(0, settings.HEIGHT, 50):
-                assert game.screen.get_at((x, y))[:3] == (0, 0, 0)
-
-    def test_victory_text_is_distinct_and_gold(self, game):
-        assert settings.BOSS_VICTORY_TEXT != 'Level Finished'
-        assert settings.BOSS_VICTORY_COLOR != settings.FADE_TEXT_COLOR
-        game.fade_text.reset(settings.BOSS_VICTORY_TEXT)
-        game.fade_text.alpha = 255
-        game.screen.fill(settings.BLACK)
-        game.fade_text.draw(game.screen, game.assets.big_font, settings.BOSS_VICTORY_COLOR)
-        found = False
-        for x in range(0, settings.WIDTH, 3):
-            for y in range(0, settings.HEIGHT, 3):
-                if game.screen.get_at((x, y))[:3] == settings.BOSS_VICTORY_COLOR:
-                    found = True
-                    break
-            if found:
-                break
-        assert found, 'the victory text should render in its own gold'
+        assert game.last_run_rank is not None
 
     def test_full_fight_reaches_the_end_of_run(self, game):
         reach_boss(game)
         assert kill_boss(game), 'the boss fight never reached the end-of-run screen'
         assert game.state == 'game_over'
         assert game.run_finished is True
-
-    def test_restart_after_victory_starts_a_fresh_run(self, game):
-        reach_boss(game)
-        assert kill_boss(game)
-        game._handle_mouse_click(game.game_over_menu.restart_rect.center)
-        assert game.current_level == 0
-        assert game.checkpoint_level == 0
-        assert game.run_finished is False
-        assert game.boss is None
-        assert game.boss_phase_active is False
 
     def test_boss_level_has_no_ship_exit_transition(self, game):
         """The boss level deliberately skips the ship-exit + 'Level Finished'
@@ -891,3 +873,132 @@ class TestVictorySequence:
         assert game._ship_exit_active is False
         assert game._level_transition_pending is False
         assert game.fade_text.text != 'Level Finished'
+
+
+# ── End-of-run screen (the boss-clear landing screen) ─────────────────
+
+
+class TestEndOfRunScreen:
+    def _show(self, game, finished: bool) -> None:
+        """Put the end-of-run screen on the canvas for a death / a clear."""
+        start_game(game)
+        game.run_finished = finished
+        game.state = 'game_over'
+        _draw_on_black(game)
+        game._draw_frame((0, 0))
+
+    def test_heading_is_the_game_complete_copy_for_a_cleared_run(self, game):
+        assert settings.GAME_COMPLETE_TITLE == 'Wanna go again....?'
+        self._show(game, finished=True)
+
+        limit = settings.WIDTH - 2 * settings.GAME_TITLE_MARGIN_X
+        expected = _render_fitted_title(
+            game.assets.big_font, settings.GAME_COMPLETE_TITLE, limit,
+            settings.GAME_COMPLETE_COLOR,
+        )
+        rect = expected.get_rect(
+            center=(settings.WIDTH // 2, settings.h_frac(1 / 4))
+        )
+        alpha = pygame.surfarray.array_alpha(expected)
+        actual = pygame.surfarray.array3d(game.screen.subsurface(rect))
+        wanted = pygame.surfarray.array3d(expected)
+        # Compare only fully-opaque glyph pixels: antialiased edges blend with
+        # whatever is behind them.
+        mask = alpha > 250
+        assert mask.any(), 'the heading should render solid glyph pixels'
+        assert (actual[mask] == wanted[mask]).all(), (
+            'the cleared-run heading is not the game-complete copy in its gold'
+        )
+
+    def test_heading_is_game_over_for_a_death(self, game):
+        self._show(game, finished=False)
+        limit = settings.WIDTH - 2 * settings.GAME_TITLE_MARGIN_X
+        expected = _render_fitted_title(
+            game.assets.big_font, 'GAME OVER', limit, settings.GAME_OVER_COLOR
+        )
+        rect = expected.get_rect(
+            center=(settings.WIDTH // 2, settings.h_frac(1 / 4))
+        )
+        alpha = pygame.surfarray.array_alpha(expected)
+        actual = pygame.surfarray.array3d(game.screen.subsurface(rect))
+        wanted = pygame.surfarray.array3d(expected)
+        mask = alpha > 250
+        assert mask.any()
+        assert (actual[mask] == wanted[mask]).all(), 'a death still reads GAME OVER'
+
+    def test_heading_is_distinct_from_the_death_screen(self, game):
+        """The gold + different copy is what still marks a cleared run as a
+        WIN now that the dedicated victory screen is gone."""
+        assert settings.GAME_COMPLETE_TITLE != 'GAME OVER'
+        assert settings.GAME_COMPLETE_COLOR != settings.GAME_OVER_COLOR
+        assert settings.GAME_COMPLETE_TITLE != 'Level Finished'
+
+    def test_heading_fits_on_screen(self, game):
+        """The heading must leave the documented margin, not run off the edges."""
+        limit = settings.WIDTH - 2 * settings.GAME_TITLE_MARGIN_X
+        assert game.assets.big_font.size(settings.GAME_COMPLETE_TITLE)[0] <= limit
+
+    def test_over_long_heading_is_shrunk_to_fit(self, game):
+        """Regression for the reported bug: the old victory copy rendered
+        779px wide on a 768px screen, so it ran off both edges."""
+        long_copy = 'THE FINAL PHASE CLEARED'
+        assert game.assets.big_font.size(long_copy)[0] > settings.WIDTH, (
+            'this copy is only a useful regression case while it overflows'
+        )
+        limit = settings.WIDTH - 2 * settings.GAME_TITLE_MARGIN_X
+        fitted = _render_fitted_title(
+            game.assets.big_font, long_copy, limit, settings.GAME_COMPLETE_COLOR
+        )
+        assert fitted.get_width() <= limit
+        # A heading that already fits is returned untouched (no gratuitous
+        # downscaling of the real copy).
+        normal = _render_fitted_title(
+            game.assets.big_font, settings.GAME_COMPLETE_TITLE, limit,
+            settings.GAME_COMPLETE_COLOR,
+        )
+        assert normal.get_size() == game.assets.big_font.size(
+            settings.GAME_COMPLETE_TITLE
+        )
+
+    def test_button_positions_are_unchanged_by_the_heading(self, game):
+        """Text-only change: RESTART/QUIT must not move."""
+        start_game(game)
+        menu = game.game_over_menu
+        reference = (menu.restart_rect.copy(), menu.quit_rect.copy())
+        for finished in (False, True):
+            game.run_finished = finished
+            game.state = 'game_over'
+            game._draw_frame((0, 0))
+            assert menu.restart_rect == reference[0]
+            assert menu.quit_rect == reference[1]
+
+    def test_button_positions_match_the_documented_layout(self, game):
+        """Pin the positions themselves: centred, on the uniform 100/800
+        screen-height rhythm (7/16 and 9/16 down)."""
+        menu = game.game_over_menu
+        assert menu.restart_rect.centerx == settings.WIDTH // 2
+        assert menu.quit_rect.centerx == settings.WIDTH // 2
+        assert menu.restart_rect.centery == settings.h_frac(7 / 16)
+        assert menu.quit_rect.centery == settings.h_frac(9 / 16)
+        assert menu.restart_rect.size == game.assets.restart_img.get_size()
+        assert menu.quit_rect.size == game.assets.quit_gameover_img.get_size()
+
+    def test_restart_from_the_cleared_run_screen_starts_a_fresh_run(self, game):
+        reach_boss(game)
+        assert kill_boss(game)
+        assert game.run_finished is True
+        game._handle_mouse_click(game.game_over_menu.restart_rect.center)
+        assert game.current_level == 0, 'a completed run restarts from Level 1'
+        assert game.checkpoint_level == 0
+        assert game.run_finished is False
+        assert game.boss is None
+        assert game.boss_phase_active is False
+        assert game.run_timer == 0.0, 'a completed run restarts the timer'
+
+    def test_quit_from_the_cleared_run_screen_returns_to_the_menu(self, game):
+        reach_boss(game)
+        assert kill_boss(game)
+        assert game.state == 'game_over'
+        game._handle_mouse_click(game.game_over_menu.quit_rect.center)
+        pump_fade(game)
+        assert game.state == 'menu'

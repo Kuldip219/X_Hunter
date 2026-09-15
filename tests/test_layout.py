@@ -459,7 +459,6 @@ def test_every_state_draws_at_the_new_size(game):
         "game_over",
         "level_intro",
         "level_finished",
-        "victory",
     ):
         game.state = state
         game._draw_frame((settings.WIDTH // 2, settings.HEIGHT // 2))
