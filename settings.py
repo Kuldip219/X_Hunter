@@ -8,6 +8,8 @@ pygame usage is reading key constants for the default key bindings.
 
 import pygame
 
+from resource_path import user_data_path
+
 # --- Screen --- #
 # The game is AUTHORED against a 600x800 canvas. Every spatial value below
 # (positions, sprite footprints, gaps, px/second speeds) is written in those
@@ -199,8 +201,10 @@ SFX_VOLUME: float = 0.7
 MUSIC_VOLUME: float = 0.45
 
 # User settings persistence: volumes live in SETTINGS_FILE (a JSON sibling of
-# highscores.json in the game's working directory), gitignored like it.
-SETTINGS_FILE: str = "settings.json"
+# highscores.json), gitignored like it. Resolved through user_data_path() so a
+# packaged build reads and writes it next to the .exe rather than in whatever
+# directory it happened to be started from (see resource_path.py).
+SETTINGS_FILE: str = user_data_path("settings.json")
 
 # --- Options screen --- #
 # Horizontal volume sliders: track size (width x height) and the grab handle
@@ -448,12 +452,13 @@ PAUSE_OVERLAY_ALPHA: int = 180
 
 # --- High scores --- #
 # Persistent top-N leaderboard. Scores are stored in HIGHSCORE_FILE (a JSON
-# file next to the game's working directory - the project root when run from
-# source) so they survive restarts. A score earns a slot when the table is
+# file written at runtime - beside the .exe when packaged, the project root
+# when run from source; see resource_path.user_data_path) so they survive
+# restarts. A score earns a slot when the table is
 # not full, or when it is strictly higher than the current last place; the
 # list is always kept sorted best-first and trimmed to HIGHSCORE_MAX entries.
 HIGHSCORE_MAX: int = 10
-HIGHSCORE_FILE: str = "highscores.json"
+HIGHSCORE_FILE: str = user_data_path("highscores.json")
 
 # Leaderboard row geometry (authored + scaled, same reasoning as the controls
 # rows: ten rows positioned from their own authored offset never drift).
