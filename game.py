@@ -865,7 +865,9 @@ class Game:
         self.player.update_fire_cooldown(dt)
         self.player.update_powerups(dt)
         self.player.handle_input(keys, dt)
-        self.player.clamp_to_screen(settings.WIDTH)
+        self.player.clamp_to_screen(
+            settings.WIDTH, settings.HEIGHT, settings.PLAYER_TOP_BOUND
+        )
 
         # Hold-to-fire: while Space is held, fire once per cooldown window.
         # The dead-early-return above freezes all of gameplay, so this can

@@ -28,13 +28,13 @@ def test_player_moves_same_distance_at_30_and_60_fps():
     a = Player(100, 600)
     for _ in range(60):
         a.handle_input(KeyState(pygame.K_RIGHT), 1.0 / 60)
-        a.clamp_to_screen(settings.WIDTH)
+        a.clamp_to_screen(settings.WIDTH, settings.HEIGHT, settings.PLAYER_TOP_BOUND)
 
     # ...versus 1 second at 30 fps (30 frames of 1/30 s).
     b = Player(100, 600)
     for _ in range(30):
         b.handle_input(KeyState(pygame.K_RIGHT), 1.0 / 30)
-        b.clamp_to_screen(settings.WIDTH)
+        b.clamp_to_screen(settings.WIDTH, settings.HEIGHT, settings.PLAYER_TOP_BOUND)
 
     assert a.x == pytest.approx(b.x, abs=0.01)
     # Both moved exactly speed (px/s) * 1 s.

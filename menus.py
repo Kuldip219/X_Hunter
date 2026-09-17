@@ -464,7 +464,7 @@ class ControlsScreen:
             center=(screen_width // 2, settings.CONTROLS_EDIT_Y)
         )
         self.title_y = settings.CONTROLS_TITLE_Y
-        # Each row from its own authored total offset (px(220 + 55i)) so the
+        # Each row from its own authored total offset (px(220 + 44i)) so the
         # stack cannot drift as rows get added - see settings.py.
         self.row_ys = [
             settings.px(settings.CONTROLS_ROWS_TOP_AUTHORED + i * settings.CONTROLS_ROW_GAP_AUTHORED)
@@ -472,8 +472,10 @@ class ControlsScreen:
         ]
         # Click targets for the rebindable rows (edit mode only). Sized from
         # the same proportional row metrics as the drawn text, so the hit
-        # zone keeps covering the row at any resolution.
-        rect_h = settings.px(44)
+        # zone keeps covering the row at any resolution - but a little under
+        # the row pitch (CONTROLS_ROW_GAP), so consecutive hit zones never
+        # touch/overlap each other.
+        rect_h = min(settings.px(44), settings.CONTROLS_ROW_GAP - settings.px(1))
         self.row_rects = [
             pygame.Rect(
                 settings.CONTROLS_ACTION_X - settings.px(10),

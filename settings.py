@@ -234,11 +234,18 @@ CONTROLS_IMG_SIZE: tuple[int, int] = (px(250), px(80))
 # The row stack keeps its AUTHORED geometry as well as the scaled values:
 # each row's y is computed as px(top + i * gap), i.e. from its own total
 # authored offset, rather than by accumulating an already-rounded gap.
-# Accumulating px(55) (70) instead of 55*1.28 (70.4) loses 0.4px per row -
+# Accumulating px(44) (56) instead of 44*1.28 (56.3) loses 0.3px per row -
 # ~2px by the eighth row - which showed up as the largest drift in the
 # old-vs-new layout comparison. This way a repeated stack stays exact.
+#
+# The gap is sized to the NUMBER of rows, because the stack has to clear the
+# EDIT button below it (CONTROLS_EDIT_Y). There are 9 actions today; at the
+# original 55-authored pitch (70px) the 8th and 9th rows ran into the EDIT
+# and BACK buttons at 768x1024. 44 authored (56px) is the largest pitch at
+# which the lowest row still clears EDIT by a margin. If more actions are
+# added, re-check this against test_layout's controls-screen bounds test.
 CONTROLS_ROWS_TOP_AUTHORED: int = 220
-CONTROLS_ROW_GAP_AUTHORED: int = 55
+CONTROLS_ROW_GAP_AUTHORED: int = 44
 CONTROLS_TITLE_Y: int = h_frac(3 / 20)
 CONTROLS_ROWS_TOP: int = px(CONTROLS_ROWS_TOP_AUTHORED)
 CONTROLS_ROW_GAP: int = px(CONTROLS_ROW_GAP_AUTHORED)
@@ -256,6 +263,8 @@ CONTROLS_EDIT_Y: int = h_frac(127 / 160)
 DEFAULT_KEY_BINDINGS: dict[str, int] = {
     "move_left": pygame.K_LEFT,
     "move_right": pygame.K_RIGHT,
+    "move_up": pygame.K_UP,
+    "move_down": pygame.K_DOWN,
     "fire": pygame.K_SPACE,
     "pause": pygame.K_ESCAPE,
     "mute": pygame.K_m,
@@ -269,6 +278,8 @@ DEFAULT_KEY_BINDINGS: dict[str, int] = {
 CONTROLS: list[tuple[str, str]] = [
     ("move_left", "Move Left"),
     ("move_right", "Move Right"),
+    ("move_up", "Move Up"),
+    ("move_down", "Move Down"),
     ("fire", "Fire (hold)"),
     ("pause", "Pause / Resume"),
     ("mute", "Mute / Unmute"),
@@ -279,6 +290,8 @@ CONTROLS: list[tuple[str, str]] = [
 REBINDABLE_ACTIONS: tuple[str, ...] = (
     "move_left",
     "move_right",
+    "move_up",
+    "move_down",
     "fire",
     "pause",
     "mute",
@@ -368,6 +381,9 @@ RAPID_FIRE_COLOR: tuple[int, int, int] = (255, 220, 0)
 POWERUP_STATUS_X: int = px(10)
 POWERUP_STATUS_Y: int = px(95)
 POWERUP_STATUS_ROW_GAP: int = px(30)
+# Shield and rapid fire can be active at the same time, so this is the most
+# status rows the HUD ever stacks (they never both fit alongside a third).
+POWERUP_STATUS_MAX_ROWS: int = 2
 
 # Top-left corner of the player's health bar. Named (rather than left as the
 # draw call's default) so layout rules - e.g. "the boss bar must not overlap
@@ -375,6 +391,27 @@ POWERUP_STATUS_ROW_GAP: int = px(30)
 PLAYER_HEALTH_POS: tuple[int, int] = (px(10), px(10))
 # Health bar sprite footprint (health_0..5.png), scaled to match the HUD.
 HEALTH_IMG_SIZE: tuple[int, int] = (px(200), px(70))
+
+# Upper bound for the player ship: the SMALLEST Y the ship's TOP edge may
+# reach, i.e. how high it can fly before it would sit on top of the top-left
+# HUD. Derived from the real bottom of that HUD rather than a hand-picked
+# number, so it cannot drift when the HUD moves:
+#   - the player's health bar, PLAYER_HEALTH_POS[1] + HEALTH_IMG_SIZE[1], and
+#   - the power-up status rows, which stack POWERUP_STATUS_ROW_GAP apart and
+#     are POWERUP_STATUS_MAX_ROWS deep; a row's box is at least the font's
+#     line height, for which FONT_SIZE_SMALL is the (slightly conservative)
+#     proxy here, then a margin.
+# The previous version bounded the ship's BOTTOM edge instead and used a
+# hard-coded 182, which let the hull rise level with the health bar and
+# overlap the status timers at the left edge. During the boss fight the boss
+# health bar sits at top-center (BOSS_ACTIVE_Y) and ends well above this
+# line, so the same bound keeps the ship clear of that too.
+PLAYER_TOP_BOUND: int = max(
+    PLAYER_HEALTH_POS[1] + HEALTH_IMG_SIZE[1],
+    POWERUP_STATUS_Y
+    + (POWERUP_STATUS_MAX_ROWS - 1) * POWERUP_STATUS_ROW_GAP
+    + FONT_SIZE_SMALL,
+) + px(20)
 
 # --- Effects ---
 SHAKE_STRENGTH: int = px(8)
@@ -454,7 +491,7 @@ EDIT_IMG_SIZE: tuple[int, int] = (px(250), px(59))
 # Level 3 ("The Final Phase") has a different shape: its target is not a
 # level-clear threshold but the BOSS GATE. Reaching 200 clears the opening
 # wave, stops all normal spawning, and flies the boss in (see BOSS_* below).
-LEVEL_SCORE_TARGETS: list[int] = [5, 5, 20]  # Level 1, Level 2, Level 3 (boss gate)
+LEVEL_SCORE_TARGETS: list[int] = [10, 10, 10]  # Level 1, Level 2, Level 3 (boss gate)
 # Derived, never hand-maintained: when LEVEL_COUNT was its own literal it
 # could exceed the number of targets, and reset_game() then indexed past the
 # end of the list (IndexError on RESTART after clearing the final level).

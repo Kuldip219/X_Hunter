@@ -40,20 +40,39 @@ class Player:
         )
 
     def handle_input(self, keys: Sequence[bool], dt: float) -> None:
-        """Move left/right based on currently-held keys. No-op while dead.
+        """Move based on currently-held keys. No-op while dead.
 
         Movement is time-based: displacement = speed (px/s) * dt (s), so the
         player covers the same distance per second at any frame rate.
+
+        Diagonal movement is additive (no normalization): holding both a
+        horizontal and a vertical key adds both displacements, so the ship
+        moves faster diagonally than cardinally - the same behavior as the
+        existing horizontal-only movement, which is also additive without
+        normalization. This keeps the input model consistent: every bound key
+        contributes its full `speed * dt` when held.
         """
         if self.dead:
             return
+        if keys[self.bindings["move_up"]]:
+            self.y -= self.speed * dt
+        if keys[self.bindings["move_down"]]:
+            self.y += self.speed * dt
         if keys[self.bindings["move_left"]]:
             self.x -= self.speed * dt
         if keys[self.bindings["move_right"]]:
             self.x += self.speed * dt
 
-    def clamp_to_screen(self, screen_width: int) -> None:
+    def clamp_to_screen(self, screen_width: int, screen_height: int, top_bound: int) -> None:
+        """Keep the ship inside the playfield.
+
+        `top_bound` is the smallest Y the ship's TOP edge may reach - the
+        line just below the HUD (health bar + power-up status rows), so
+        flying up can never put the hull on top of the HUD text. The bottom
+        bound is the bottom edge of the screen.
+        """
         self.x = max(0, min(screen_width - self.width, self.x))
+        self.y = max(top_bound, min(screen_height - self.height, self.y))
 
     def get_rect(self) -> pygame.Rect:
         return pygame.Rect(self.x, self.y, self.width, self.height)

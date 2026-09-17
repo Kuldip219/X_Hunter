@@ -71,9 +71,11 @@ def test_controls_screen_content_matches_real_bindings(game):
     assert len(screen.row_ys) == len(settings.CONTROLS)
     actions = [action for action, _label in settings.CONTROLS]
     assert "move_left" in actions and "move_right" in actions
+    assert "move_up" in actions and "move_down" in actions
     assert "fire" in actions and "pause" in actions
     assert "mute" in actions and "back" in actions
     assert "restart" in actions
+    assert len(actions) == len(settings.CONTROLS)
     # The live bindings drive the display labels.
     from menus import _key_display_name
 
@@ -86,12 +88,25 @@ def test_controls_screen_content_matches_real_bindings(game):
     _enter_controls(game)
     game._update_and_draw((0, 0))
     assert game.state == "controls"
+    # The rows lay out from one pitch
+    # (CONTROLS_ROWS_TOP_AUTHORED + CONTROLS_ROW_GAP_AUTHORED * i) and the
+    # lowest one still clears the EDIT and BACK buttons below it. This is the
+    # regression that adding move_up/move_down caused: at the old 55-authored
+    # pitch the 8th and 9th rows ran into the EDIT button.
+    assert len(screen.row_ys) == len(settings.CONTROLS)
+    assert screen.row_ys[-1] == settings.px(
+        settings.CONTROLS_ROWS_TOP_AUTHORED
+        + settings.CONTROLS_ROW_GAP_AUTHORED * (len(settings.CONTROLS) - 1)
+    )
+    assert screen.row_ys[-1] < screen.edit_rect.top
+    assert screen.row_ys[-1] < screen.back_rect.top
 
 
 def test_controls_rows_single_column_generous_spacing(game):
     """The full-screen layout uses one binding per row with the comfortable
     CONTROLS_ROW_GAP between rows (no 2x3 grid needed anymore)."""
-    ys = game.controls_screen.row_ys
+    screen = game.controls_screen
+    ys = screen.row_ys
     assert len(ys) == len(settings.CONTROLS)
     # Rows are spaced by the authored gap scaled to the window (the pitch is
     # derived per row from its authored offset, so the step is consistent to
@@ -99,6 +114,12 @@ def test_controls_rows_single_column_generous_spacing(game):
     for a, b in zip(ys, ys[1:]):
         assert abs((b - a) - settings.CONTROLS_ROW_GAP) <= 1
     assert ys[0] == settings.CONTROLS_ROWS_TOP
+    # With every action listed, the lowest row's hit zone must still clear
+    # the EDIT button - the constraint that sizes CONTROLS_ROW_GAP.
+    assert screen.row_rects[-1].bottom <= screen.edit_rect.top
+    # ...and consecutive hit zones must not overlap each other either.
+    for a, b in zip(screen.row_rects, screen.row_rects[1:]):
+        assert not a.colliderect(b)
 
 
 # ---------------------------------------------------------------------- #
