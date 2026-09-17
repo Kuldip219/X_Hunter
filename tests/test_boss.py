@@ -9,8 +9,10 @@ Covers the whole contract:
 - spread fan + telegraphed aimed burst (phases 2+), minions (phase 3 only),
 - boss bullets behave exactly like gunner bullets (shield blocks, i-frames),
 - no i-frame gap: every connecting bullet deals damage,
-- the victory sequence: flash, staggered chain, then straight to the
-  end-of-run screen (there is deliberately no dedicated victory screen).
+- the victory sequence: flash, a multi-stage explosion chain across the
+  sprite's body, the boss's removal, the ship exit (the SAME shared
+  transition a normal level ends with), then the end-of-run screen (there
+  is deliberately no dedicated victory screen).
 """
 
 import numpy as np
@@ -28,7 +30,9 @@ from gunner import GunnerEnemy
 from helpers import (
     KeyState,
     kill_boss,
+    pump,
     pump_fade,
+    pump_run_until,
     reach_boss,
     start_game,
     wait_for_boss_active,
@@ -846,7 +850,8 @@ class TestVictorySequence:
         chain = game.boss_death_chain
         assert len(chain) == settings.BOSS_DEATH_EXPLOSION_COUNT + 1
         times = [entry[0] for entry in chain]
-        # Staggered ~150 ms apart, ending with the final full-sprite blast.
+        # Evenly staggered by the configured interval, ending with the final
+        # full-sprite blast (the 4-5 s total is asserted separately).
         for a, b in zip(times, times[1:]):
             assert b - a == pytest.approx(settings.BOSS_DEATH_EXPLOSION_INTERVAL_SECONDS)
         assert chain[-1][3] > 1.0, 'the final blast is bigger than the chain blasts'
@@ -874,8 +879,8 @@ class TestVictorySequence:
             assert gap == pytest.approx(settings.BOSS_DEATH_EXPLOSION_INTERVAL_SECONDS, abs=DT * 2)
 
     def test_clear_flow_goes_straight_to_the_end_of_run_screen(self, game):
-        """No dedicated victory screen: the flash + staggered chain hand
-        straight off to the restart/quit screen."""
+        """No dedicated victory screen: the flash + staggered chain + ship
+        exit hand off to the restart/quit screen."""
         start_game(game)
         _no_enemies(game)
         game.boss = _active_boss()
@@ -897,6 +902,10 @@ class TestVictorySequence:
         assert game.fade_text.active is False
         assert game.run_finished is True
         assert game.boss is None, 'the boss is gone once the chain finishes'
+        # ...which is not the end of the sequence: the ship then flies out
+        # through the shared exit before the screen appears.
+        assert game._ship_exit_leads_to == 'game_over'
+        assert game.player.y + game.player.height < 0, 'the ship left the screen'
         # The completed run is still recorded on the time leaderboard, even
         # though the screen that used to write it is gone.
         entries = game.high_scores.entries
@@ -909,13 +918,248 @@ class TestVictorySequence:
         assert game.state == 'game_over'
         assert game.run_finished is True
 
-    def test_boss_level_has_no_ship_exit_transition(self, game):
-        """The boss level deliberately skips the ship-exit + 'Level Finished'
-        flow other levels use."""
+    def test_the_boss_gate_itself_has_no_ship_exit_transition(self, game):
+        """Reaching the score gate starts the boss, not the ship exit: at the
+        gate there is no exit and no 'Level Finished' overlay. The exit only
+        happens much later, once the boss is dead and has finished exploding."""
         reach_boss(game)
         assert game._ship_exit_active is False
         assert game._level_transition_pending is False
         assert game.fade_text.text != 'Level Finished'
+
+
+# ── The multi-stage death sequence ────────────────────────────────────
+
+
+class TestBossDeathSequence:
+    """Boss death is a sequence, not a single hand-off: 4-5 s of explosions
+    scattered across the sprite's body, then the boss is removed, then the
+    ship leaves the screen through the SAME exit other levels use, and only
+    then does the end-of-run screen appear."""
+
+    def _kill(self, game) -> None:
+        """Start the death sequence through the real damage path (one bullet
+        on a 1-HP boss), leaving the player at its normal starting position."""
+        start_game(game)
+        _no_enemies(game)
+        game.boss = _active_boss(hp=1)
+        rect = game.boss.get_rect()
+        game.bullets.append(
+            Bullet(rect.centerx - settings.BULLET_IMG_SIZE[0] // 2, rect.centery)
+        )
+        game._update_game(KeyState(), DT)
+        assert game.boss_dying, 'the killing hit starts the death sequence'
+
+    def _run_out_the_chain(self, game) -> None:
+        while game.boss_dying:
+            game._update_game(KeyState(), DT)
+
+    def _drive_to_the_end_of_the_run(self, game, cap: int = 1200) -> list[str]:
+        """Drive real frames to the end-of-run screen, returning the ordered
+        milestones of the sequence."""
+        log: list[str] = []
+        was_exiting = False
+        for _ in range(cap):
+            game._update_and_draw((0, 0))
+            game._advance_transitions()
+            if game.boss_dying and 'chain' not in log:
+                log.append('chain')
+            elif game.boss is None and 'boss removed' not in log:
+                log.append('boss removed')
+            if game._ship_exit_active and not was_exiting and 'ship exit' not in log:
+                log.append('ship exit')
+            was_exiting = game._ship_exit_active
+            if game.state == 'game_over':
+                log.append('game_over')
+                break
+        return log
+
+    # ---- duration and the shape of the chain ------------------------- #
+
+    def test_sequence_duration_lands_in_the_four_to_five_second_window(self, game):
+        """The whole explosion sequence is 4-5 s, and that total is derived
+        from the three tunable constants rather than hardcoded anywhere."""
+        self._kill(game)
+        expected = (
+            settings.BOSS_DEATH_EXPLOSION_COUNT
+            * settings.BOSS_DEATH_EXPLOSION_INTERVAL_SECONDS
+            + settings.BOSS_DEATH_HOLD_SECONDS
+        )
+        assert game.boss_death_duration == pytest.approx(expected)
+        assert 4.0 <= game.boss_death_duration <= 5.0, game.boss_death_duration
+
+    def test_bursts_are_spread_across_the_boss_body(self, game):
+        """One burst per grid cell over the sprite's footprint: the set must
+        span most of the body rather than clumping the way independent
+        uniform samples do."""
+        self._kill(game)
+        boss = game.boss
+        positions = game._boss_death_positions()
+        assert len(positions) == settings.BOSS_DEATH_EXPLOSION_COUNT
+
+        frame_w, frame_h = settings.EXPLOSION_IMG_SIZE
+        for x, y in positions:
+            cx, cy = x + frame_w / 2, y + frame_h / 2
+            assert boss.x - frame_w <= cx <= boss.x + boss.width + frame_w, (x, y)
+            assert boss.y - frame_h <= cy <= boss.y + boss.height + frame_h, (x, y)
+
+        xs = [x for x, _ in positions]
+        ys = [y for _, y in positions]
+        assert max(xs) - min(xs) > boss.width / 2, 'bursts must span the width'
+        assert max(ys) - min(ys) > boss.height / 2, 'bursts must span the height'
+
+    def test_boss_is_present_for_the_whole_chain_and_removed_only_at_the_end(self, game):
+        self._kill(game)
+        # Two seconds in - barely half way - the sprite is still there.
+        for _ in range(int(2.0 / DT)):
+            game._update_game(KeyState(), DT)
+        assert game.boss_dying is True
+        assert game.boss is not None, 'the sprite must not vanish mid-chain'
+
+        self._run_out_the_chain(game)
+        assert game.boss is None, 'removed once the chain finishes'
+        assert game.boss_death_chain == []
+        assert game.boss_death_timer >= game.boss_death_duration
+
+    # ---- the hand-off: shared ship exit, then the end-of-run screen --- #
+
+    def test_chain_hands_off_to_the_shared_ship_exit(self, game, monkeypatch):
+        """The boss ending flies the ship out through the SAME helpers a
+        normal level uses. Spying on them is the proof that this is shared
+        code and not a second, parallel implementation."""
+        calls: list[tuple[str, str | None]] = []
+        begin = Game._begin_ship_exit
+        advance = Game._advance_ship_exit
+        monkeypatch.setattr(
+            Game,
+            '_begin_ship_exit',
+            lambda self, leads_to: (calls.append(('begin', leads_to)), begin(self, leads_to))[1],
+        )
+        monkeypatch.setattr(
+            Game,
+            '_advance_ship_exit',
+            lambda self, dt: (calls.append(('advance', None)), advance(self, dt))[1],
+        )
+
+        self._kill(game)
+        log = self._drive_to_the_end_of_the_run(game)
+
+        assert ('begin', 'game_over') in calls, 'the boss ending must use the shared exit'
+        assert ('advance', None) in calls, 'and the shared per-frame motion'
+        assert log.index('boss removed') < log.index('ship exit') < len(log) - 1, log
+        assert log[-1] == 'game_over', log
+
+    def test_a_normal_level_clear_uses_the_same_helpers(self, game, monkeypatch):
+        """The other half of the shared behaviour, so the two can never drift
+        apart: an ordinary level's clear calls the same helpers."""
+        calls: list[str] = []
+        begin = Game._begin_ship_exit
+        monkeypatch.setattr(
+            Game,
+            '_begin_ship_exit',
+            lambda self, leads_to: (calls.append(leads_to), begin(self, leads_to))[1],
+        )
+        start_game(game)
+        game.score = game.level_score_target
+        game._check_level_completion()
+        assert calls == ['level_finished']
+
+    def test_ship_exit_moves_at_the_shared_speed_and_is_dt_based(self, game):
+        self._kill(game)
+        self._run_out_the_chain(game)
+        assert game._ship_exit_active, 'the exit starts once the boss is gone'
+
+        start_y = game.player.y
+        game._update_game(KeyState(), DT)
+        assert game.player.y == pytest.approx(
+            start_y - settings.SHIP_EXIT_SPEED_PER_SEC * DT
+        )
+        # Halving dt halves the step: speed is px/sec, never px/frame.
+        game.player.y = start_y
+        game._update_game(KeyState(), DT / 2)
+        assert game.player.y == pytest.approx(
+            start_y - settings.SHIP_EXIT_SPEED_PER_SEC * DT / 2
+        )
+
+        steps = 0
+        while game._ship_exit_active and steps < 600:
+            game._update_game(KeyState(), DT)
+            steps += 1
+        assert game.player.y + game.player.height < 0, 'off-screen to finish'
+
+    def test_the_ship_does_not_snap_back_during_the_hand_off_fade(self, game):
+        """Regression: the ship used to be re-clamped back into the playfield
+        for the frames between the exit finishing and the state changing, so
+        it visibly popped back on top of an empty screen just before the
+        end-of-run screen appeared."""
+        self._kill(game)
+        self._run_out_the_chain(game)
+        while game._ship_exit_active:
+            game._update_game(KeyState(), DT)
+            game._advance_transitions()
+        assert game.player.y + game.player.height < 0
+
+        while game.state == 'game':
+            game._update_game(KeyState(), DT)
+            game._advance_transitions()
+            assert game.player.y + game.player.height < 0, (
+                'the ship must stay gone until the state changes'
+            )
+        assert game.state == 'game_over'
+
+    def test_leaderboard_write_happens_after_the_ship_leaves(self, game, monkeypatch):
+        """The Finished entry moved later with the sequence: writing it at
+        boss death would record a time that misses the closing animation."""
+        writes: list[tuple] = []
+        add = game.high_scores.add
+
+        def spy(time_seconds, result, timestamp=None):
+            writes.append((result, game.player.y, game._ship_exit_active))
+            return add(time_seconds, result, timestamp)
+
+        monkeypatch.setattr(game.high_scores, 'add', spy)
+        self._kill(game)
+        self._drive_to_the_end_of_the_run(game)
+
+        assert len(writes) == 1, f'exactly one write, got {writes}'
+        result, y_at_write, exiting = writes[0]
+        assert result == 'Finished'
+        assert not exiting, 'the write must not happen while the ship is still leaving'
+        assert y_at_write + game.player.height < 0, 'the ship had already left the screen'
+        assert game.last_run_rank is not None
+
+    def test_pause_during_the_hand_off_still_ends_the_run(self, game):
+        """Pausing mid-hand-off cancels the fade to the end-of-run screen.
+        The run must re-issue it instead of sitting frozen in an empty,
+        unwinnable level."""
+        self._kill(game)
+        self._run_out_the_chain(game)
+        while game._ship_exit_active:
+            game._update_game(KeyState(), DT)
+            game._advance_transitions()
+        assert game._run_ending is True
+
+        game._handle_keydown(pygame.K_ESCAPE)          # pause, cancelling the fade
+        assert pump_run_until(game, lambda g: g.state == 'pause')
+        game._handle_keydown(pygame.K_ESCAPE)          # resume
+        pump(game, 400)
+        assert game.state == 'game_over', 'the run must still end'
+        finished = [e for e in game.high_scores.entries if e.result == 'Finished']
+        assert len(finished) == 1, 'and be recorded exactly once'
+
+    def test_player_killed_on_the_killing_step_still_ends_the_run(self, game):
+        """A player killed in the same step as the boss has no ship left to
+        fly out; the run must still end rather than stall on an exit that can
+        never advance (the dead-player freeze returns before it)."""
+        self._kill(game)
+        game.player.dead = True
+        self._run_out_the_chain(game)
+
+        assert game._ship_exit_active is False, 'nothing to fly out'
+        assert game._run_ending is True
+        log = self._drive_to_the_end_of_the_run(game)
+        assert log[-1] == 'game_over', log
+        assert [e.result for e in game.high_scores.entries] == ['Finished']
 
 
 # ── End-of-run screen (the boss-clear landing screen) ─────────────────

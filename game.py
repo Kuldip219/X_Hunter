@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 
 import pygame
@@ -119,6 +120,16 @@ class Game:
         # completion). While True the ship flies upward off-screen,
         # enemy replenishment is stopped, and player input is blocked.
         self._ship_exit_active: bool = False
+        # Where that exit hands off once the ship has left the screen:
+        # "level_finished" for an ordinary level, "game_over" for the boss
+        # ending (the run is over, so there is no next level to introduce).
+        # Both routes fly the identical shared animation - only the hand-off
+        # differs.
+        self._ship_exit_leads_to: str = "level_finished"
+        # True from the moment the boss run is over until the end-of-run
+        # screen owns the state. Freezes the simulation while the hand-off
+        # fade plays (see _update_game).
+        self._run_ending: bool = False
 
         # Flag set at the start of a level to show "Phase N" intro text.
         # Cleared when the text finishes.
@@ -231,6 +242,8 @@ class Game:
         self._level_transition_pending = False
         self._level_intro_pending = True
         self._ship_exit_active = False
+        self._ship_exit_leads_to = "level_finished"
+        self._run_ending = False
         phase_num = self.current_level + 1
         self.fade_text.reset(f"Phase {phase_num}")
 
@@ -550,6 +563,63 @@ class Game:
                 # "Phase N" text - the exact thing level_intro exists to stop.
                 self.fade.start("level_intro")
 
+    # ------------------------------------------------------------------ #
+    # End-of-phase ship exit (shared by normal levels and the boss ending)
+    # ------------------------------------------------------------------ #
+
+    def _begin_ship_exit(self, leads_to: str) -> None:
+        """Start the ship-exit animation and remember where it hands off.
+
+        Shared by an ordinary level's score target and by the boss ending, so
+        both fly the identical exit animation; `leads_to` is the only
+        difference ("level_finished" for the next level's intro screen,
+        "game_over" when the run is over).
+
+        Clears the field - no more enemies, bullets, or power-ups while the
+        ship leaves - and zeroes the i-frame timer. The player is invulnerable
+        during this phase, and a frozen invulnerable_timer could otherwise
+        lock _blink_visible() into an invisible phase for the whole exit,
+        making the ship disappear instantly.
+        """
+        self._ship_exit_active = True
+        self._ship_exit_leads_to = leads_to
+        self.enemies.clear()
+        self.gunners.clear()
+        self.enemy_bullets.clear()
+        self.bullets.clear()
+        self.powerups.clear()
+        self.player.invulnerable_timer = 0.0
+
+    def _advance_ship_exit(self, dt: float) -> bool:
+        """Fly the ship upward off the top of the screen.
+
+        Returns True once it has fully cleared the screen, which is the
+        caller's cue to hand off. This is the game's only ship-exit
+        animation: direction, speed (SHIP_EXIT_SPEED_PER_SEC) and dt-based
+        timing are identical for every caller.
+        """
+        self.player.y -= settings.SHIP_EXIT_SPEED_PER_SEC * dt
+        # Run timer keeps counting during ship exit.
+        self.run_timer = (
+            (pygame.time.get_ticks() - self.run_start_ticks - self.run_timer_paused_ms)
+            / 1000.0
+        )
+        return self.player.y + self.player.height < 0
+
+    def _finish_the_run(self) -> None:
+        """Record the completed run, then hand off to the end-of-run screen.
+
+        Called only once the run is genuinely over - after the boss death
+        sequence and, when there is still a ship to fly out, after its exit.
+        Writing the leaderboard entry here rather than at the killing hit
+        means the recorded time covers the whole run, including the closing
+        animation. The entry is written exactly once; _update_game only
+        re-issues the fade if that hand-off gets cancelled.
+        """
+        self._run_ending = True
+        self.last_run_rank = self.high_scores.add(self.run_timer, result="Finished")
+        self.fade.start("game_over")
+
     def _check_level_completion(self) -> None:
         """Check if the current level's score target has been reached.
 
@@ -577,19 +647,7 @@ class Game:
             if self.current_level == settings.BOSS_LEVEL_INDEX:
                 self._start_boss_phase()
                 return
-            self._ship_exit_active = True
-            # Clear the field: no more enemies, bullets, or power-ups while
-            # the ship exits. The player is invulnerable during this phase.
-            self.enemies.clear()
-            self.gunners.clear()
-            self.enemy_bullets.clear()
-            self.bullets.clear()
-            self.powerups.clear()
-            # Clear the i-frame timer so the player is always visible during
-            # the exit animation. Without this, a frozen invulnerable_timer
-            # could lock _blink_visible() into an invisible phase for the
-            # entire exit, making the ship disappear instantly.
-            self.player.invulnerable_timer = 0.0
+            self._begin_ship_exit("level_finished")
 
     # ------------------------------------------------------------------ #
     # Level 3: boss
@@ -632,10 +690,12 @@ class Game:
         frame_w, frame_h = settings.EXPLOSION_IMG_SIZE
         chain: list[tuple[float, float, float, float]] = []
         if self.boss is not None:
-            for i in range(settings.BOSS_DEATH_EXPLOSION_COUNT):
-                # Scatter blasts across the sprite's footprint.
-                x = self.boss.x + random.uniform(0, self.boss.width) - frame_w / 2
-                y = self.boss.y + random.uniform(0, self.boss.height) - frame_h / 2
+            # The sprite stays on screen for the whole sequence, so clear the
+            # combat telegraphs first: otherwise a hit flash or aim tint
+            # frozen at the moment of death sits on the wreck for seconds.
+            self.boss.hit_flash = 0.0
+            self.boss.aim_charge = 0.0
+            for i, (x, y) in enumerate(self._boss_death_positions()):
                 chain.append((i * interval, x, y, 1.0))
             # Final, bigger blast centered on the sprite, after the chain.
             scale = settings.BOSS_DEATH_FINAL_EXPLOSION_SCALE
@@ -652,8 +712,43 @@ class Game:
         last_time = chain[-1][0] if chain else 0.0
         self.boss_death_duration = last_time + settings.BOSS_DEATH_HOLD_SECONDS
 
+    def _boss_death_positions(self) -> list[tuple[float, float]]:
+        """Top-left explosion positions scattered across the boss's footprint.
+
+        A jittered grid rather than independent uniform samples: with this
+        many blasts, picking each position independently leaves visible clumps
+        and bare patches, whereas one blast per grid cell (each nudged inside
+        its own cell) covers the whole hull. The cells are shuffled so the
+        coverage does not read as a left-to-right scan.
+        """
+        if self.boss is None:
+            return []
+        count = settings.BOSS_DEATH_EXPLOSION_COUNT
+        frame_w, frame_h = settings.EXPLOSION_IMG_SIZE
+        cols = max(1, math.ceil(math.sqrt(count)))
+        rows = max(1, math.ceil(count / cols))
+        cell_w = self.boss.width / cols
+        cell_h = self.boss.height / rows
+        cells = [(c, r) for r in range(rows) for c in range(cols)][:count]
+        random.shuffle(cells)
+        positions: list[tuple[float, float]] = []
+        for col, row in cells:
+            jitter_x = random.uniform(-0.25, 0.25) * cell_w
+            jitter_y = random.uniform(-0.25, 0.25) * cell_h
+            positions.append(
+                (
+                    self.boss.x + (col + 0.5) * cell_w + jitter_x - frame_w / 2,
+                    self.boss.y + (row + 0.5) * cell_h + jitter_y - frame_h / 2,
+                )
+            )
+        return positions
+
     def _update_boss_death(self, dt: float) -> None:
-        """Tick the death chain; hand off to the end-of-run screen when done."""
+        """Tick the death chain; hand off to the ship exit when done."""
+        if not self.boss_dying:
+            # Already handed off. _update_game only calls this while the boss
+            # is dying, but keep the completion one-shot for direct callers.
+            return
         self.boss_death_timer += dt
         while self.boss_death_chain and self.boss_death_chain[0][0] <= self.boss_death_timer:
             _t, x, y, scale = self.boss_death_chain.pop(0)
@@ -665,22 +760,24 @@ class Game:
         if self.boss_death_chain or self.boss_death_timer < self.boss_death_duration:
             return
 
-        # Chain finished: the boss is gone and the run is complete. The flash
-        # plus the staggered chain IS the victory moment - there is no
-        # dedicated victory-text screen, so we hand straight off to the normal
-        # end-of-run screen (whose heading is the game-complete copy because
-        # run_finished is set), and RESTART/QUIT work exactly as they already
-        # do after the last level.
+        # Chain finished: every blast has played out, so the boss sprite is
+        # removed now - not before, or the explosions would detonate over an
+        # empty patch of space.
         self.boss_dying = False
         self.boss = None
+        # The ship then leaves the screen exactly as it does at the end of a
+        # normal level: the same shared animation (_begin_ship_exit), only the
+        # hand-off differs ("game_over" instead of the next level's intro).
         # run_finished was already set when the boss hit 0 HP - the run is won
         # from that instant, not from the end of the animation.
-        self.fade.start("game_over")
-        # Record the completed run here: with the victory screen gone, this
-        # hand-off is the last thing the run does before the end-of-run screen
-        # (previously this happened when the victory text finished). Writing a
-        # tiny JSON file is effectively instant and failure-tolerant.
-        self.last_run_rank = self.high_scores.add(self.run_timer, result="Finished")
+        # A player killed in the same step as the boss is already gone, so
+        # there is no ship left to fly out: end the run immediately rather
+        # than stalling on an exit that can never advance (the dead-player
+        # freeze returns before the ship-exit branch).
+        if self.player.dead:
+            self._finish_the_run()
+        else:
+            self._begin_ship_exit("game_over")
 
     def _draw_mute_indicator(self) -> None:
         """Small 'MUTED' label in the top-right corner while audio is off."""
@@ -830,6 +927,22 @@ class Game:
             self._update_boss_death(dt)
             return
 
+        # The level (or the whole run) is already over and its hand-off fade
+        # is playing: the state stays "game" for those frames, and nothing may
+        # simulate in that window. Without this the gameplay path below
+        # re-clamps the off-screen ship back into the playfield, so it visibly
+        # pops back on top for the length of the fade (16 frames, measured) -
+        # the ship must stay gone once it has left.
+        if self._level_transition_pending or self._run_ending:
+            if self._run_ending and not self.fade.fading_out:
+                # The end-of-run fade was cancelled - the player paused
+                # mid-fade and then resumed - so re-issue it. Otherwise the
+                # run would sit frozen in an empty, unwinnable level. The
+                # leaderboard entry is NOT rewritten here; _finish_the_run
+                # already recorded it, exactly once.
+                self.fade.start("game_over")
+            return
+
         # Once the player is dead, gameplay is fully frozen - no input, no
         # collisions, no bullet/enemy movement - until the state machine has
         # actually transitioned away from "game" (the fade-out to "game_over"
@@ -840,17 +953,18 @@ class Game:
 
         # Ship exit animation (Phase 1 of level completion): the ship flies
         # upward off the top of the screen. Player input is blocked,
-        # enemies are cleared, and the player is invulnerable. When the
-        # ship reaches the top, transition to the "level_finished" state.
+        # enemies are cleared, and the player is invulnerable. Once it has
+        # cleared the screen the run hands off: to the "Level Finished"
+        # screen for an ordinary level, or straight to the end-of-run screen
+        # for the boss ending (see _ship_exit_leads_to). Both routes fly this
+        # same shared animation and differ only in the hand-off.
         if self._ship_exit_active:
-            self.player.y -= settings.SHIP_EXIT_SPEED_PER_SEC * dt
-            # Run timer keeps counting during ship exit.
-            self.run_timer = (
-                (pygame.time.get_ticks() - self.run_start_ticks - self.run_timer_paused_ms)
-                / 1000.0
-            )
-            if self.player.y + self.player.height < 0:
-                self._ship_exit_active = False
+            if not self._advance_ship_exit(dt):
+                return
+            self._ship_exit_active = False
+            if self._ship_exit_leads_to == "game_over":
+                self._finish_the_run()
+            else:
                 self._level_transition_pending = True
                 self.fade.start("level_finished")
                 self.fade_text.reset("Level Finished")

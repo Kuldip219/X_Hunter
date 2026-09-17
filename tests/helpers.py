@@ -168,8 +168,8 @@ def wait_for_boss_active(game, cap: int = 600) -> bool:
 
 def kill_boss(game, cap: int = 4000) -> bool:
     """Defeat the boss through the REAL damage path (one bullet hit) and play
-    the whole boss-death sequence (flash + staggered explosion chain) out to
-    the end-of-run screen.
+    the whole boss-death sequence out to the end-of-run screen: the flash, the
+    multi-burst explosion chain, the boss's removal, and the ship exit.
 
     Returns whether "game_over" was reached within `cap` frames.
     """

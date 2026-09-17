@@ -639,10 +639,20 @@ BOSS_MINION_INTERVAL_SECONDS: float = 3.0
 BOSS_MINION_SPAWN_SPREAD: float = 0.25
 
 # Victory sequence (boss HP reaches 0): a white screen flash, a staggered
-# explosion chain across the sprite, then a final larger full-sprite blast
-# BOSS_DEATH_HOLD_SECONDS after the last one before the victory screen.
-BOSS_DEATH_EXPLOSION_COUNT: int = 6
-BOSS_DEATH_EXPLOSION_INTERVAL_SECONDS: float = 0.15
+# explosion chain across the sprite, then a final larger full-sprite blast.
+#
+# Timing: the scattered blasts land at i * INTERVAL for i in 0..COUNT-1 and
+# the final big one at COUNT * INTERVAL; HOLD_SECONDS is the tail that lets
+# that last blast play out before the boss sprite is removed and the ship
+# leaves. The whole death sequence is therefore
+#   COUNT * INTERVAL + HOLD_SECONDS
+# which is deliberately in the 4-5 s window (test_boss pins the range), so
+# retiming the sequence means tuning these three values and nothing else.
+# Positions are a jittered grid across the boss's footprint (see
+# Game._boss_death_positions) so COUNT blasts cover its body evenly instead
+# of clumping the way uniform-random sampling does.
+BOSS_DEATH_EXPLOSION_COUNT: int = 16
+BOSS_DEATH_EXPLOSION_INTERVAL_SECONDS: float = 0.25
 BOSS_DEATH_HOLD_SECONDS: float = 0.7
 BOSS_DEATH_FINAL_EXPLOSION_SCALE: float = 2.0
 # Hit flash: an additive white pop on the sprite.
