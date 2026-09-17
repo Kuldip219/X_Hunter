@@ -491,7 +491,7 @@ EDIT_IMG_SIZE: tuple[int, int] = (px(250), px(59))
 # Level 3 ("The Final Phase") has a different shape: its target is not a
 # level-clear threshold but the BOSS GATE. Reaching 200 clears the opening
 # wave, stops all normal spawning, and flies the boss in (see BOSS_* below).
-LEVEL_SCORE_TARGETS: list[int] = [10, 10, 10]  # Level 1, Level 2, Level 3 (boss gate)
+LEVEL_SCORE_TARGETS: list[int] = [120, 100, 80]  # Level 1, Level 2, Level 3 (boss gate)
 # Derived, never hand-maintained: when LEVEL_COUNT was its own literal it
 # could exceed the number of targets, and reset_game() then indexed past the
 # end of the list (IndexError on RESTART after clearing the final level).
