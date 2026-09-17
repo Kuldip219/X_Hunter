@@ -685,6 +685,13 @@ class Game:
         self.run_finished = True
         self.victory_flash.trigger()
         self.enemy_bullets.clear()
+        # Zero the i-frame timer for the same reason _begin_ship_exit does: the
+        # chain freezes the gameplay tick, so a timer left mid-blink locks
+        # _blink_visible() into whatever phase it was in - and half the phases
+        # are "hidden", which made the ship vanish for the whole sequence.
+        # Zeroed, phases = 0 and the ship renders solid; nothing can hurt it
+        # while the chain runs anyway (no collision pass is reached).
+        self.player.invulnerable_timer = 0.0
 
         interval = settings.BOSS_DEATH_EXPLOSION_INTERVAL_SECONDS
         frame_w, frame_h = settings.EXPLOSION_IMG_SIZE
@@ -742,6 +749,33 @@ class Game:
                 )
             )
         return positions
+
+    def _advance_idle_scene(self, dt: float) -> None:
+        """Keep the pure-motion parts of the scene alive while gameplay is
+        frozen for the boss-death chain.
+
+        Called from the boss-dying branch of _update_game, which skips the
+        whole gameplay step (no input, no spawning, no collisions). Bullets in
+        flight and drops still falling are not gameplay: they are part of a
+        scene that is still being watched, and the parallax background keeps
+        scrolling underneath them the whole time, so leaving them motionless
+        reads as a crash. They carry on, leave the screen, and clean
+        themselves up - none of them can hit anything while the chain runs,
+        and _begin_ship_exit clears the field before play resumes.
+
+        Deliberately NOT ticked here: the fire cooldown and the shield/rapid
+        fire windows. Those are inputs and timers to gameplay that is over,
+        and freezing them keeps a remaining power-up window from burning down
+        during a cinematic.
+        """
+        for bullet in self.bullets[:]:
+            bullet.update(dt)
+            if bullet.off_screen:
+                self.bullets.remove(bullet)
+        for powerup in self.powerups[:]:
+            powerup.update(dt)
+            if powerup.expired(settings.HEIGHT):
+                self.powerups.remove(powerup)
 
     def _update_boss_death(self, dt: float) -> None:
         """Tick the death chain; hand off to the ship exit when done."""
@@ -924,6 +958,11 @@ class Game:
         # is set. Handled before the dead-player freeze so a player killed in
         # the same step can never strand the boss-death sequence half-played.
         if self.boss_dying:
+            # The chain is watched, not played - but it is still the live
+            # scene (the parallax keeps scrolling for the whole "game"
+            # state), so anything already in motion keeps moving instead of
+            # hanging in mid-air for the length of the sequence.
+            self._advance_idle_scene(dt)
             self._update_boss_death(dt)
             return
 

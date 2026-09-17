@@ -27,6 +27,7 @@ from enemy import Enemy
 from enemy_bullet import EnemyBullet
 from game import Game
 from gunner import GunnerEnemy
+from powerup import PowerUp
 from helpers import (
     KeyState,
     kill_boss,
@@ -1020,6 +1021,134 @@ class TestBossDeathSequence:
         assert game.boss is None, 'removed once the chain finishes'
         assert game.boss_death_chain == []
         assert game.boss_death_timer >= game.boss_death_duration
+
+    # ---- what stays on screen while the chain plays ------------------- #
+
+    def _ship_ink(self, game) -> int:
+        """How many pixels the ship itself contributes to the current frame.
+
+        Measured by re-rendering the identical instant with the ship's own
+        draw suppressed, so everything else in the frame cancels out. The
+        shake offset is zeroed first (it offsets the ship's blit, and it is
+        frozen mid-shake during the chain so it will not clear itself), as are
+        the two flashes (each fades one step per draw, so leaving them live
+        would make the two renders differ everywhere, not just at the ship).
+        """
+        player = game.player
+        game.shake_offset = (0, 0)
+        game.damage_flash.timer = 0
+        game.victory_flash.timer = 0
+        rect = player.get_rect()
+        game._draw_frame((0, 0))
+        with_ship = pygame.surfarray.array3d(game.screen).copy()
+        real_draw = player.draw
+        player.draw = lambda *args, **kwargs: None  # type: ignore[method-assign]
+        try:
+            game._draw_frame((0, 0))
+            without_ship = pygame.surfarray.array3d(game.screen).copy()
+        finally:
+            player.draw = real_draw
+        differs = (with_ship != without_ship).any(axis=2)
+        return int(differs[rect.left : rect.right, rect.top : rect.bottom].sum())
+
+    def test_the_ship_stays_on_screen_for_the_whole_explosion_chain(self, game):
+        """The chain is a cinematic, not a disappearance: the ship keeps
+        rendering in place for the whole 4.7 s.
+
+        The i-frame blink is what used to break this. The chain freezes the
+        gameplay tick, so a player who had been hit kept whatever blink phase
+        it was in - and half of them are 'hidden' - so the ship blinked out
+        for the entire sequence. The killing hit is therefore staged on a
+        hidden phase below: exactly the frame the bug lived on.
+        """
+        start_game(game)
+        _no_enemies(game)
+        game.boss = _active_boss(hp=1)
+        player = game.player
+        player.invulnerable_timer = settings.PLAYER_BLINK_INTERVAL_SECONDS * 7
+        assert player.invulnerable
+        assert not player._blink_visible(), 'staged on the hidden blink phase'
+        self._kill_here(game)
+        start_pos = (player.x, player.y)
+
+        inks = [self._ship_ink(game)]
+        while game.boss_dying:
+            game._update_game(KeyState(), DT)
+            inks.append(self._ship_ink(game))
+
+        assert len(inks) > int(4.0 / DT), 'the chain really did run for seconds'
+        assert min(inks) > 0, f'the ship vanished during the chain: {min(inks)} px'
+        assert min(inks) > 0.8 * max(inks), (
+            f'the ship flickered rather than rendering steadily: {min(inks)}..{max(inks)} px'
+        )
+        assert (player.x, player.y) == start_pos, 'the ship holds its position, not just its pixels'
+
+    def test_the_ship_renders_solid_once_the_boss_dies(self, game):
+        """The mechanism behind the test above: the hidden blink phase is
+        cleared at boss death, the same way _begin_ship_exit clears it."""
+        start_game(game)
+        _no_enemies(game)
+        game.boss = _active_boss(hp=1)
+        game.player.invulnerable_timer = settings.PLAYER_BLINK_INTERVAL_SECONDS * 7
+        assert not game.player._blink_visible()
+
+        self._kill_here(game)
+
+        assert game.boss_dying
+        assert game.player.invulnerable_timer == 0.0
+        assert game.player._blink_visible(), 'phases = 0 -> the ship must render'
+
+    def test_bullets_already_in_flight_keep_flying_through_the_chain(self, game):
+        """Option (a): shots in the air keep travelling and leave the screen,
+        rather than hanging where they were when the boss died.
+
+        The scene around them is already live - the parallax keeps scrolling
+        for the whole 'game' state - so a bullet held motionless against a
+        flowing starfield reads as a crash rather than a freeze-frame.
+        """
+        self._kill(game)
+        bullet = Bullet(settings.px(300), settings.px(600))
+        game.bullets.append(bullet)
+        ys = [bullet.y]
+        while bullet in game.bullets and game.boss_dying:
+            game._update_game(KeyState(), DT)
+            if bullet in game.bullets:
+                ys.append(bullet.y)
+
+        assert len(ys) > 2, 'the bullet should spend many frames in flight'
+        assert ys == sorted(ys, reverse=True), f'the bullet stalled in mid-air: {ys}'
+        assert len(set(ys)) == len(ys), 'a repeated position is a frozen bullet'
+        assert bullet not in game.bullets
+        assert game.boss_dying, 'it left by its own motion, not by the ship-exit clear'
+
+    def test_drops_left_on_the_field_keep_falling_through_the_chain(self, game):
+        """Same root cause, same treatment: a drop mid-air is motion in a live
+        scene too, and freezing it left an icon hanging under the explosions."""
+        self._kill(game)
+        drop = PowerUp(settings.POWERUP_KIND_HEALTH, settings.px(200), settings.px(500))
+        game.powerups.append(drop)
+        ys = [drop.y]
+        while drop in game.powerups and game.boss_dying:
+            game._update_game(KeyState(), DT)
+            if drop in game.powerups:
+                ys.append(drop.y)
+
+        assert len(ys) > 2, 'the drop should spend many frames falling'
+        # Falling means y grows, so the sequence is strictly increasing.
+        assert ys == sorted(ys), f'the drop stalled in mid-air: {ys}'
+        assert len(set(ys)) == len(ys), 'a repeated position is a frozen drop'
+        assert drop not in game.powerups, 'it fell out of the world on its own'
+        assert game.boss_dying, 'it left by its own motion, not by the ship-exit clear'
+
+    def _kill_here(self, game) -> None:
+        """The killing hit, on a boss (and player state) already staged by the
+        caller - unlike _kill(), which sets its own scenario up."""
+        rect = game.boss.get_rect()
+        game.bullets.append(
+            Bullet(rect.centerx - settings.BULLET_IMG_SIZE[0] // 2, rect.centery)
+        )
+        game._update_game(KeyState(), DT)
+        assert game.boss_dying, 'the killing hit starts the death sequence'
 
     # ---- the hand-off: shared ship exit, then the end-of-run screen --- #
 
