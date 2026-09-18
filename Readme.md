@@ -38,7 +38,7 @@ pytest
 
 ## 📷 Screenshots
 
-![Main_Menu](Screenshots/main_menu.png) ![Gameplay](Screenshots/gameplay.png) ![Pause_Menu](Screenshots/pause_menu.png)
+![Main_Menu](Screenshots/Main_menu.png) ![Gameplay_1](Screenshots/Gameplay_1.png) ![Gameplay_2](Screenshots/Gameplay_2.png)
 
 ---
 
